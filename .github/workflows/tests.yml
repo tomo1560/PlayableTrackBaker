@@ -26,7 +26,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore VRChat VPM dependencies
-        uses: anatawa12/sh-actions/resolve-vpm-packages@master
+        uses: anatawa12/sh-actions/resolve-vpm-packages@1d155c7a26bcd0a54ffd9cb38fd66ab0d32d23cd # master (2026-07-12)
         with:
           project-path: TestProject
 

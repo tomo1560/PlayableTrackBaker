@@ -29,6 +29,8 @@ jobs:
   # Build the VPM Listing Website and deploy to GitHub Pages
   build-listing:
     name: build-listing
+    # Skip when triggered by a failed Build Release run (workflow_run fires on any completion)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -44,6 +46,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: vrchat-community/package-list-action
+          ref: cb31c3b5d17d1070d7741c61de2ca1b219224039 # main (2026-07-12)
           path: ${{ env.pathToCi }}
           clean: false
 
