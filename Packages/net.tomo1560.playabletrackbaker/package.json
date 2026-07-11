@@ -4,6 +4,7 @@
   "displayName": "PlayableTrackBaker for VRChat Worlds",
   "description": "Bakes Timeline PlayableTracks into AnimationClips so custom playables play back in VRChat worlds. Includes a non-destructive upload-time bake and a ghost-compare preview. Requires the VRChat Worlds SDK (VRC.SDKBase).",
   "unity": "2022.3",
+  "license": "MIT",
   "author": {
     "name": "tomo1560"
   },

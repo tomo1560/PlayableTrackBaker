@@ -227,3 +227,7 @@ Console の `[PlayableTrackBaker]` で始まるログを確認してください
 | `TimelineBakeMarker.cs` | ベイク対象を指定するマーカーコンポーネント（ランタイムアセンブリ、IEditorOnly） |
 | `Editor/PlayableTrackBaker.cs` | エディタ専用。記録処理の共有コア（`PlayableTrackBakeCore`）、手動プレビュー用の破壊的ベイク（`PlayableTrackBaker`）、アップロード時の非破壊ベイク（`PlayableTrackBakeSceneProcessor : IProcessSceneWithReport`）、一時アセットの後始末（`PlayableTrackBakeTempCleanup`）を含む |
 | `Editor/PlayableTrackPreview.cs` | エディタ専用。非破壊のゴースト比較プレビューウィンドウ（`PlayableTrackPreviewWindow : EditorWindow`）。シーン/アセットを書き換えずに元の動きとベイク結果を比較する |
+
+## ライセンス
+
+MIT License です。詳細はリポジトリルートの [LICENSE](LICENSE) を参照してください。
