@@ -20,6 +20,13 @@ namespace PlayableTrackBaking
         [Tooltip("true: Transform 以外（BlendShape 等の全アニメーション可能プロパティ）も記録する")]
         public bool recordAllProperties = false;
 
+        /// <summary>ベイクのサンプリングレートとして許容する下限（fps）。</summary>
+        public const float MinFrameRate = 1f;
+
+        /// <summary>ベイクのサンプリングレートとして許容する上限（fps）。極端な値による総サンプル数の爆発を防ぐ。</summary>
+        public const float MaxFrameRate = 240f;
+
+        [Range(MinFrameRate, MaxFrameRate)]
         [Tooltip("ベイクのサンプリングレート")]
         public float frameRate = 60f;
 

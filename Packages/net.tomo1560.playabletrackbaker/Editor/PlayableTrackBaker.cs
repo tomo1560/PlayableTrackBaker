@@ -25,6 +25,12 @@ namespace PlayableTrackBaking
         public const string OutputFolder = "Assets/BakedTimelineClips";
         public const string BakedTrackPrefix = "[Baked]";
 
+        /// <summary>
+        /// 1 回の Record で許容する総サンプル数の上限。
+        /// 異常な frameRate × 長尺 Timeline の組み合わせでエディタがフリーズ／メモリ枯渇するのを防ぐ。
+        /// </summary>
+        internal const int MaxTotalFrames = 1_000_000;
+
         public static bool HasPlayableTrack(TimelineAsset timeline)
             => timeline.GetOutputTracks().Any(t => t is PlayableTrack);
 
@@ -39,6 +45,17 @@ namespace PlayableTrackBaking
         public static List<(AnimationClip clip, GameObject root)> Record(
             PlayableDirector director, TimelineAsset timeline, TimelineBakeMarker marker)
         {
+            // Inspector には Range 属性があるが、古いシーンに保存済みの異常値対策として同じ範囲へクランプする
+            float fps = Mathf.Clamp(marker.frameRate, TimelineBakeMarker.MinFrameRate, TimelineBakeMarker.MaxFrameRate);
+            double duration = timeline.duration;
+            int frames = Mathf.CeilToInt((float)duration * fps);
+
+            // 総サンプル数の上限チェックは Timeline に触れる前（unmute より前）に行い、黙ってクランプせず明確に失敗させる
+            if (frames > MaxTotalFrames)
+                throw new System.InvalidOperationException(
+                    $"[PlayableTrackBaker] {marker.name}: 総サンプル数 {frames} が上限 {MaxTotalFrames} を超えています。" +
+                    "Frame Rate を下げるか Timeline を短くしてください。");
+
             var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
                 .Select(track => (track, track.muted)).ToList();
             double originalTime = director != null ? director.time : 0.0;
@@ -46,10 +63,6 @@ namespace PlayableTrackBaking
             // ミュートされたトラックは評価されず記録できないので、記録前に必ずアンミュート
             foreach (var pt in timeline.GetOutputTracks().OfType<PlayableTrack>())
                 pt.muted = false;
-
-            float fps = Mathf.Max(1f, marker.frameRate);
-            double duration = timeline.duration;
-            int frames = Mathf.CeilToInt((float)duration * fps);
 
             try
             {
@@ -415,6 +428,31 @@ namespace PlayableTrackBaking
         }
 
         /// <summary>
+        /// トラックが本ツールの生成物である証拠（Timeline アセットに直列化される痕跡）を持つか。
+        ///  - クリップの displayName に BakedTrackPrefix を埋めている（AddBakedTracks が付与）
+        ///  - クリップが参照する AnimationClip がベイク出力フォルダ配下のアセット（旧バージョンの生成物との互換用）
+        /// 名前の prefix 一致だけではユーザーが偶然 "[Baked]..." と命名したトラックを誤削除するため、
+        /// 削除可否は「prefix 一致 かつ この証拠あり」で判定する。
+        /// </summary>
+        internal static bool IsBakedTrackOwnedByTool(TrackAsset track)
+        {
+            if (!(track is AnimationTrack))
+                return false;
+            foreach (var clip in track.GetClips())
+            {
+                if (clip.displayName != null && clip.displayName.StartsWith(BakedTrackPrefix))
+                    return true;
+                if (clip.asset is AnimationPlayableAsset animAsset && animAsset.clip != null)
+                {
+                    string path = AssetDatabase.GetAssetPath(animAsset.clip);
+                    if (!string.IsNullOrEmpty(path) && path.StartsWith(OutputFolder + "/"))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// 既存の [Baked] トラックを削除してから、記録済みクリップごとに AnimationTrack を追加する。
         /// クリップは呼び出し側で永続化（ディスク保存 or サブアセット化）済みであること。
         /// </summary>
@@ -422,9 +460,21 @@ namespace PlayableTrackBaking
             PlayableDirector director, TimelineAsset timeline,
             List<(AnimationClip clip, GameObject root)> recorded, bool mutePlayableTracks)
         {
-            // 既存の [Baked] トラックを削除（再ベイク時／クローン元由来の増殖防止）
+            // 既存の [Baked] トラックを削除（再ベイク時／クローン元由来の増殖防止）。
+            // ユーザーが自分で "[Baked]..." と命名したトラックは所有証拠が無いため削除せずスキップする
             foreach (var t in timeline.GetOutputTracks().Where(t => t.name.StartsWith(BakedTrackPrefix)).ToArray())
-                timeline.DeleteTrack(t);
+            {
+                if (IsBakedTrackOwnedByTool(t))
+                {
+                    timeline.DeleteTrack(t);
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        $"[PlayableTrackBaker] トラック \"{t.name}\" は名前が {BakedTrackPrefix} で始まりますが、" +
+                        "本ツールが生成した痕跡が無いため削除しません。ベイク生成物と紛らわしいので改名を推奨します。", timeline);
+                }
+            }
 
             foreach (var (clip, root) in recorded)
             {
@@ -436,6 +486,8 @@ namespace PlayableTrackBaking
                 var track = timeline.CreateTrack<AnimationTrack>(null, $"{BakedTrackPrefix} {root.name}");
                 track.trackOffset = TrackOffset.ApplySceneOffsets;
                 var tlClip = track.CreateClip(clip);
+                // 再ベイク時に「本ツールの生成物」と識別するための直列化される目印（IsBakedTrackOwnedByTool が参照）
+                tlClip.displayName = $"{BakedTrackPrefix} {root.name}";
                 tlClip.start = 0;
                 tlClip.duration = clip.length;
                 director.SetGenericBinding(track, animator);
@@ -580,37 +632,55 @@ namespace PlayableTrackBaking
             var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
                 .Select(pt => (track: pt, muted: pt.muted)).ToList();
 
-            var recorded = new List<(AnimationClip clip, GameObject root)>();
-            foreach (var marker in validMarkers)
-                recorded.AddRange(PlayableTrackBakeCore.Record(director, timeline, marker));
-
-            // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
-            // ルート名衝突を避けるためインデックスをパスに含める。
-            for (int i = 0; i < recorded.Count; i++)
-            {
-                var (clip, root) = recorded[i];
-                string path = PlayableTrackBakeCore.BuildClipAssetPath(director, timeline, root, i);
-                var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
-                if (existing != null)
-                {
-                    EditorUtility.CopySerialized(clip, existing);
-                    recorded[i] = (existing, root);
-                }
-                else
-                {
-                    AssetDatabase.CreateAsset(clip, path);
-                }
-            }
-
             bool mutePlayableTracks = validMarkers.All(marker => marker.mutePlayableTracksAfterBake);
-            PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks);
-
-            // 全ミュートしない設定のときは、ユーザーが意図的にミュートしていたトラックを元へ戻す
-            if (!mutePlayableTracks)
+            var createdAssetPaths = new List<string>(); // 例外時ロールバック用（このベイクで新規作成した .anim のみ追跡）
+            bool succeeded = false;
+            try
             {
-                foreach (var (track, muted) in muteSnapshot)
-                    if (track != null)
-                        track.muted = muted;
+                var recorded = new List<(AnimationClip clip, GameObject root)>();
+                foreach (var marker in validMarkers)
+                    recorded.AddRange(PlayableTrackBakeCore.Record(director, timeline, marker));
+
+                // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
+                // ルート名衝突を避けるためインデックスをパスに含める。
+                for (int i = 0; i < recorded.Count; i++)
+                {
+                    var (clip, root) = recorded[i];
+                    string path = PlayableTrackBakeCore.BuildClipAssetPath(director, timeline, root, i);
+                    var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+                    if (existing != null)
+                    {
+                        EditorUtility.CopySerialized(clip, existing);
+                        recorded[i] = (existing, root);
+                    }
+                    else
+                    {
+                        AssetDatabase.CreateAsset(clip, path);
+                        createdAssetPaths.Add(path);
+                    }
+                }
+
+                PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks);
+                succeeded = true;
+            }
+            catch
+            {
+                // 中途半端な .anim をディスクに残さない。ただし既存アセットを上書き更新した分は
+                // 削除すると過去のベイクへの参照まで壊れるため、新規作成した分だけ消す
+                foreach (var path in createdAssetPaths)
+                    AssetDatabase.DeleteAsset(path);
+                throw;
+            }
+            finally
+            {
+                // 失敗時は必ず元の muted 状態へ戻す（Record / AddBakedTracks の途中で例外が出ても失われないように）。
+                // 成功時は全ミュートしない設定のときだけ、ユーザーが意図的にミュートしていたトラックを元へ戻す
+                if (!succeeded || !mutePlayableTracks)
+                {
+                    foreach (var (track, muted) in muteSnapshot)
+                        if (track != null)
+                            track.muted = muted;
+                }
             }
 
             EditorUtility.SetDirty(timeline);

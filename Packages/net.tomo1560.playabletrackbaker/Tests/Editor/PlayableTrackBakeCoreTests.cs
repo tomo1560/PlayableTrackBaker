@@ -1,9 +1,12 @@
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.TestTools;
 using UnityEngine.Timeline;
 
 namespace PlayableTrackBaking.Tests
@@ -286,6 +289,79 @@ namespace PlayableTrackBaking.Tests
             Assert.AreEqual(2, bakedTracks.Count,
                 "複数マーカーから集約した記録は、同じ Timeline 上にすべて追加されるはず");
             Assert.IsTrue(rig.track.muted, "集約追加後に元の PlayableTrack がミュートされるはず");
+        }
+
+        // ---- AddBakedTracks（生成トラックの所有権判定）----------------------------------
+
+        [Test]
+        public void AddBakedTracks_SkipsUserTrackWithBakedPrefix()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+
+            // ユーザーが偶然 "[Baked]..." と命名しただけのトラック（本ツールの所有証拠なし）
+            var userTrack = rig.timeline.CreateTrack<AnimationTrack>(
+                null, $"{PlayableTrackBakeCore.BakedTrackPrefix} UserTrack");
+            _cleanup.Add(userTrack);
+
+            var clip = new AnimationClip();
+            _cleanup.Add(clip);
+            var recorded = new List<(AnimationClip clip, GameObject root)> { (clip, rig.targetGo) };
+
+            LogAssert.Expect(LogType.Warning, new Regex("UserTrack"));
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+
+            Assert.IsTrue(userTrack != null && rig.timeline.GetOutputTracks().Contains(userTrack),
+                "prefix 一致でも所有証拠のないユーザートラックは削除されないはず");
+        }
+
+        [Test]
+        public void AddBakedTracks_DeletesOwnedTracksOnRebake()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+
+            var clip = new AnimationClip();
+            _cleanup.Add(clip);
+            var recorded = new List<(AnimationClip clip, GameObject root)> { (clip, rig.targetGo) };
+
+            // 2 回呼んでも本ツール生成のトラックは増殖しない（前回分が所有証拠つきで削除される）
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+
+            int bakedCount = rig.timeline.GetOutputTracks()
+                .Count(t => t.name.StartsWith(PlayableTrackBakeCore.BakedTrackPrefix));
+            Assert.AreEqual(1, bakedCount, "再ベイクで [Baked] トラックが増殖しないはず");
+        }
+
+        // ---- Record（frameRate クランプと総サンプル数の上限）---------------------------
+
+        [Test]
+        public void Record_ClampsFrameRateToSupportedRange()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+            rig.marker.frameRate = 100000f; // 古いシーンに保存された Range 導入前の異常値を想定
+
+            var clip = RecordSingleClip(rig);
+            var curve = GetLocalPositionYCurve(clip);
+            Assert.IsNotNull(curve);
+
+            int frames = Mathf.CeilToInt((float)Duration * TimelineBakeMarker.MaxFrameRate);
+            Assert.AreEqual(frames + 1, curve.length,
+                $"異常な frameRate は上限 {TimelineBakeMarker.MaxFrameRate} fps へクランプしてサンプリングされるはず");
+        }
+
+        [Test]
+        public void Record_RejectsExcessiveTotalFrames()
+        {
+            // FrameRate = 30 のままでも総サンプル数が MaxTotalFrames を超える長さの Timeline
+            double duration = PlayableTrackBakeCore.MaxTotalFrames / (double)FrameRate + 10.0;
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f, duration: duration);
+            rig.track.muted = true;
+
+            var ex = Assert.Throws<System.InvalidOperationException>(
+                () => PlayableTrackBakeCore.Record(rig.director, rig.timeline, rig.marker));
+            StringAssert.Contains("上限", ex.Message);
+            Assert.IsTrue(rig.track.muted,
+                "上限超過は Timeline に触れる前に失敗し、mute 状態へ影響しないはず");
         }
 
         // ---- Record（ミュート解除）-----------------------------------------------------
