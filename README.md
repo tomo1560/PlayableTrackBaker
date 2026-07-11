@@ -95,7 +95,7 @@ Packages/net.tomo1560.playabletrackbaker/
 - 時刻スライダーで任意のフレームを、「再生」トグルで連続再生を確認できます。
 - 「ゴーストのオフセット(X)」でゴーストを横にずらして並べるか、`0` にして重ねて厳密確認できます。
 - 「最大ローカル位置誤差」が表示されます。オフセット `0`（重ね置き）で誤差がほぼ 0 なら一致です。ずれる場合は `Frame Rate` を上げるか `High Precision` を有効化してください。
-- **完全に非破壊**です。ゴーストは `HideFlags.HideAndDontSave` の一時オブジェクトで、停止時に破棄され、実オブジェクトの Transform も元へ戻ります。Git 差分は出ません。
+- **原則として非破壊**です。ゴーストは `HideFlags.HideAndDontSave` の一時オブジェクトで、停止時に破棄され、実オブジェクトの Transform も元へ戻ります。Git 差分は出ません。
 - 制約: 復元されるのは **Record Roots 配下の Transform のみ**です。Activation など他トラックや、`Record All Properties` 使用時の Transform 以外のプロパティを動かす Timeline では、停止後に一部状態が残る場合があります。**プレビュー中はシーンを保存しないでください。**
 
 ### 3. 手動でベイクして確認する（破壊的・任意）
