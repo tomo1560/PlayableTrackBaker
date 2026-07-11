@@ -52,7 +52,7 @@ namespace PlayableTrackBaking.Tests
         /// クリップは Timeline の長さ（FixedLength = Duration）より長めにしておき、
         /// t == Duration ちょうどのサンプルでもクリップが評価されるようにする。
         /// </summary>
-        Rig BuildRig(bool highPrecision, float reduction, float frequency)
+        Rig BuildRig(bool highPrecision, float reduction, float frequency, double duration = Duration)
         {
             var targetGo = new GameObject("BakeTest_Target");
             _cleanup.Add(targetGo);
@@ -71,14 +71,14 @@ namespace PlayableTrackBaking.Tests
 
             var clip = track.CreateClip<SineMoveTestPlayableAsset>();
             clip.start = 0;
-            clip.duration = Duration + 0.5; // 終端サンプル（t == Duration）でも評価されるよう余裕を持たせる
+            clip.duration = duration + 0.5; // 終端サンプル（t == duration）でも評価されるよう余裕を持たせる
             var asset = (SineMoveTestPlayableAsset)clip.asset;
             _cleanup.Add(asset);
             asset.amplitude = Amplitude;
             asset.frequency = frequency;
 
             timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
-            timeline.fixedDuration = Duration;
+            timeline.fixedDuration = duration;
 
             director.playableAsset = timeline;
 
@@ -244,6 +244,48 @@ namespace PlayableTrackBaking.Tests
                 "t=0 の値が期待値と一致するはず");
             Assert.AreEqual(ExpectedY(frequency, Duration), curve.Evaluate((float)Duration), 1e-3f,
                 "t=duration の値が期待値と一致するはず");
+        }
+
+        [Test]
+        public void LightweightMode_NonIntegralFrameDurationEndsAtTimelineDuration()
+        {
+            const double duration = 1.01;
+            var rig = BuildRig(highPrecision: false, reduction: 0f, frequency: 0.375f, duration: duration);
+            var clip = RecordSingleClip(rig);
+
+            Assert.AreEqual((float)duration, clip.length, 1e-4f,
+                "Timeline の終端がフレーム境界でなくても、記録クリップが次フレームまで延びないはず");
+        }
+
+        // ---- AddBakedTracks（複数マーカー相当の集約結果）------------------------------
+
+        [Test]
+        public void AddBakedTracks_PreservesAllAggregatedRecordings()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+            var secondRoot = new GameObject("BakeTest_Target_Second");
+            _cleanup.Add(secondRoot);
+
+            var firstClip = new AnimationClip();
+            var secondClip = new AnimationClip();
+            _cleanup.Add(firstClip);
+            _cleanup.Add(secondClip);
+            var recorded = new List<(AnimationClip clip, GameObject root)>
+            {
+                (firstClip, rig.targetGo),
+                (secondClip, secondRoot),
+            };
+
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+
+            var bakedTracks = new List<TrackAsset>();
+            foreach (var track in rig.timeline.GetOutputTracks())
+                if (track.name.StartsWith(PlayableTrackBakeCore.BakedTrackPrefix))
+                    bakedTracks.Add(track);
+
+            Assert.AreEqual(2, bakedTracks.Count,
+                "複数マーカーから集約した記録は、同じ Timeline 上にすべて追加されるはず");
+            Assert.IsTrue(rig.track.muted, "集約追加後に元の PlayableTrack がミュートされるはず");
         }
 
         // ---- Record（ミュート解除）-----------------------------------------------------

@@ -58,8 +58,6 @@ namespace PlayableTrackBaking
         static List<(AnimationClip, GameObject)> RecordWithRecorder(
             PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames)
         {
-            float dt = 1f / fps;
-
             // レコーダー準備（記録ルートごとに 1 つ）。未設定（null）のスロットは記録しない
             var recorders = new GameObjectRecorder[marker.recordRoots.Length];
             for (int i = 0; i < marker.recordRoots.Length; i++)
@@ -79,15 +77,18 @@ namespace PlayableTrackBaking
 
             // director.time は float ではなく double で算出し、長尺での累積誤差を防ぐ
             director.RebuildGraph();
+            double previousTime = 0.0;
             for (int f = 0; f <= frames; f++)
             {
-                director.time = System.Math.Min(f / (double)fps, duration);
+                double sampleTime = System.Math.Min(f / (double)fps, duration);
+                director.time = sampleTime;
                 director.Evaluate();
                 foreach (var r in recorders)
                 {
                     if (r != null)
-                        r.TakeSnapshot(f == 0 ? 0f : dt);
+                        r.TakeSnapshot(f == 0 ? 0f : (float)(sampleTime - previousTime));
                 }
+                previousTime = sampleTime;
             }
             director.time = 0;
             director.Evaluate();
@@ -114,8 +115,6 @@ namespace PlayableTrackBaking
         static List<(AnimationClip, GameObject)> RecordHighPrecision(
             PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames)
         {
-            float dt = 1f / fps;
-
             var captures = new List<RootCapture>();
             for (int i = 0; i < marker.recordRoots.Length; i++)
             {
@@ -138,6 +137,7 @@ namespace PlayableTrackBaking
 
             director.RebuildGraph();
             double lastT = double.NegativeInfinity;
+            double previousTime = 0.0;
             for (int f = 0; f <= frames; f++)
             {
                 double t = System.Math.Min(f / (double)fps, duration);
@@ -151,10 +151,11 @@ namespace PlayableTrackBaking
                     if (newTime)
                         rc.Capture((float)t);
                     if (rc.recorder != null)
-                        rc.recorder.TakeSnapshot(f == 0 ? 0f : dt);
+                        rc.recorder.TakeSnapshot(f == 0 ? 0f : (float)(t - previousTime));
                 }
                 if (newTime)
                     lastT = t;
+                previousTime = t;
             }
             director.time = 0;
             director.Evaluate();
@@ -415,6 +416,23 @@ namespace PlayableTrackBaking
                 s = s.Replace(c, '_');
             return s;
         }
+
+        /// <summary>
+        /// 同名の Director / Record Root が別シーンや別 Timeline に存在しても衝突しない、
+        /// 手動ベイク用 AnimationClip の安定した保存パスを返す。
+        /// </summary>
+        internal static string BuildClipAssetPath(
+            PlayableDirector director, TimelineAsset timeline, GameObject root, int resultIndex)
+        {
+            string timelinePath = AssetDatabase.GetAssetPath(timeline);
+            string timelineId = string.IsNullOrEmpty(timelinePath)
+                ? timeline.GetInstanceID().ToString()
+                : AssetDatabase.AssetPathToGUID(timelinePath);
+            string directorId = GlobalObjectId.GetGlobalObjectIdSlow(director).ToString();
+            string rootId = GlobalObjectId.GetGlobalObjectIdSlow(root).ToString();
+            string stableId = Hash128.Compute($"{timelineId}|{directorId}|{rootId}|{resultIndex}").ToString();
+            return $"{OutputFolder}/{Sanitize(director.name)}_{Sanitize(root.name)}_{stableId}_baked.anim";
+        }
     }
 
     /// <summary>
@@ -468,10 +486,17 @@ namespace PlayableTrackBaking
         internal static int RunBake(IEnumerable<TimelineBakeMarker> markers)
         {
             int count = 0;
-            foreach (var marker in markers)
+            var groups = markers
+                .Where(marker => marker != null)
+                .Select(marker => (marker, director: ResolveDirector(marker)))
+                .Where(x => x.director != null)
+                .GroupBy(x => x.director);
+
+            foreach (var group in groups)
             {
-                if (marker != null && BakeDestructive(marker))
-                    count++;
+                var groupMarkers = group.Select(x => x.marker).ToList();
+                if (BakeDestructive(group.Key, groupMarkers))
+                    count += groupMarkers.Count;
             }
             if (count > 0)
                 AssetDatabase.SaveAssets();
@@ -480,16 +505,27 @@ namespace PlayableTrackBaking
 
         internal static bool BakeDestructive(TimelineBakeMarker marker)
         {
-            var director = marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
+            var director = ResolveDirector(marker);
+            return director != null && BakeDestructive(director, new[] { marker });
+        }
+
+        static PlayableDirector ResolveDirector(TimelineBakeMarker marker)
+            => marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
+
+        static bool BakeDestructive(PlayableDirector director, IReadOnlyList<TimelineBakeMarker> markers)
+        {
             if (director == null || !(director.playableAsset is TimelineAsset timeline))
                 return false;
             if (!PlayableTrackBakeCore.HasPlayableTrack(timeline))
                 return false;
-            if (marker.recordRoots == null || marker.recordRoots.Length == 0)
+
+            var validMarkers = markers.Where(marker => marker != null && marker.recordRoots != null && marker.recordRoots.Length > 0).ToList();
+            foreach (var marker in markers.Except(validMarkers))
             {
                 Debug.LogWarning($"[PlayableTrackBaker] {marker.name}: recordRoots が未設定のためスキップします。", marker);
-                return false;
             }
+            if (validMarkers.Count == 0)
+                return false;
 
             PlayableTrackBakeCore.EnsureFolder();
 
@@ -497,14 +533,16 @@ namespace PlayableTrackBaking
             var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
                 .Select(pt => (track: pt, muted: pt.muted)).ToList();
 
-            var recorded = PlayableTrackBakeCore.Record(director, timeline, marker);
+            var recorded = new List<(AnimationClip clip, GameObject root)>();
+            foreach (var marker in validMarkers)
+                recorded.AddRange(PlayableTrackBakeCore.Record(director, timeline, marker));
 
             // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
             // ルート名衝突を避けるためインデックスをパスに含める。
             for (int i = 0; i < recorded.Count; i++)
             {
                 var (clip, root) = recorded[i];
-                string path = $"{PlayableTrackBakeCore.OutputFolder}/{PlayableTrackBakeCore.Sanitize(director.name)}_{PlayableTrackBakeCore.Sanitize(root.name)}_{i}_baked.anim";
+                string path = PlayableTrackBakeCore.BuildClipAssetPath(director, timeline, root, i);
                 var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
                 if (existing != null)
                 {
@@ -517,10 +555,11 @@ namespace PlayableTrackBaking
                 }
             }
 
-            PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, marker.mutePlayableTracksAfterBake);
+            bool mutePlayableTracks = validMarkers.All(marker => marker.mutePlayableTracksAfterBake);
+            PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks);
 
             // 全ミュートしない設定のときは、ユーザーが意図的にミュートしていたトラックを元へ戻す
-            if (!marker.mutePlayableTracksAfterBake)
+            if (!mutePlayableTracks)
             {
                 foreach (var (track, muted) in muteSnapshot)
                     if (track != null)
@@ -592,10 +631,15 @@ namespace PlayableTrackBaking
             EnsureTempFolder();
 
             int baked = 0;
-            foreach (var marker in markers)
+            var groups = markers
+                .Select(marker => (marker, director: ResolveDirector(marker)))
+                .Where(x => x.director != null)
+                .GroupBy(x => x.director);
+            foreach (var group in groups)
             {
-                if (BakeNonDestructive(marker))
-                    baked++;
+                var groupMarkers = group.Select(x => x.marker).ToList();
+                if (BakeNonDestructive(group.Key, groupMarkers))
+                    baked += groupMarkers.Count;
             }
             if (baked > 0)
             {
@@ -604,23 +648,29 @@ namespace PlayableTrackBaking
             }
         }
 
-        static bool BakeNonDestructive(TimelineBakeMarker marker)
+        static PlayableDirector ResolveDirector(TimelineBakeMarker marker)
+            => marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
+
+        static bool BakeNonDestructive(
+            PlayableDirector director, IReadOnlyList<TimelineBakeMarker> markers)
         {
-            var director = marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
             if (director == null || !(director.playableAsset is TimelineAsset src))
                 return false;
             if (!PlayableTrackBakeCore.HasPlayableTrack(src))
                 return false;
-            if (marker.recordRoots == null || marker.recordRoots.Length == 0)
+
+            var validMarkers = markers.Where(marker => marker.recordRoots != null && marker.recordRoots.Length > 0).ToList();
+            foreach (var marker in markers.Except(validMarkers))
             {
                 Debug.LogWarning($"[PlayableTrackBaker] {marker.name}: recordRoots が未設定のためスキップします。", marker);
-                return false;
             }
+            if (validMarkers.Count == 0)
+                return false;
 
             string srcPath = AssetDatabase.GetAssetPath(src);
             if (string.IsNullOrEmpty(srcPath))
             {
-                Debug.LogWarning($"[PlayableTrackBaker] {marker.name}: TimelineAsset が保存済みアセットではないため非破壊ベイクできません。", marker);
+                Debug.LogWarning($"[PlayableTrackBaker] {director.name}: TimelineAsset が保存済みアセットではないため非破壊ベイクできません。", director);
                 return false;
             }
 
@@ -628,13 +678,15 @@ namespace PlayableTrackBaking
             string clonePath = AssetDatabase.GenerateUniqueAssetPath($"{TempFolder}/{PlayableTrackBakeCore.Sanitize(director.name)}.playable");
             if (!AssetDatabase.CopyAsset(srcPath, clonePath))
             {
-                Debug.LogWarning($"[PlayableTrackBaker] {marker.name}: TimelineAsset のクローンに失敗しました（{srcPath}）。", marker);
+                Debug.LogWarning($"[PlayableTrackBaker] {director.name}: TimelineAsset のクローンに失敗しました（{srcPath}）。", director);
                 return false;
             }
             var clone = AssetDatabase.LoadAssetAtPath<TimelineAsset>(clonePath);
             director.playableAsset = clone;
 
-            var recorded = PlayableTrackBakeCore.Record(director, clone, marker);
+            var recorded = new List<(AnimationClip clip, GameObject root)>();
+            foreach (var marker in validMarkers)
+                recorded.AddRange(PlayableTrackBakeCore.Record(director, clone, marker));
 
             // クリップはクローン Timeline のサブアセットとして持たせ、ビルドに含める
             foreach (var (clip, _) in recorded)

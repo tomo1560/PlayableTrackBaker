@@ -22,10 +22,30 @@ jobs:
           echo "configPackage=false" >> $GITHUB_OUTPUT;
         fi
 
+  validate:
+    needs: config
+    if: needs.config.outputs.config_package == 'true'
+    runs-on: ubuntu-latest
+    env:
+      packagePath: Packages/${{ vars.PACKAGE_NAME }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+
+      - name: Validate package structure and manifest
+        run: |
+          test -f "${packagePath}/package.json"
+          test -f "${packagePath}/Runtime/net.tomo1560.playabletrackbaker.Runtime.asmdef"
+          test -f "${packagePath}/Editor/net.tomo1560.playabletrackbaker.Editor.asmdef"
+          test "$(jq -r '.name' "${packagePath}/package.json")" = "${{ vars.PACKAGE_NAME }}"
+          jq -e '.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")' "${packagePath}/package.json"
+          jq -e '.unity == "2022.3"' "${packagePath}/package.json"
+          jq -e '.vpmDependencies["com.vrchat.base"] and .dependencies["com.unity.timeline"]' "${packagePath}/package.json"
+
   # Build and release the Package
   # If the repository is not configured properly, this job will be skipped
   build:
-    needs: config
+    needs: [config, validate]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -52,6 +72,13 @@ jobs:
           echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
           echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+
+      - name: Reject an existing release version
+        run: |
+          if git rev-parse "refs/tags/${{ steps.version.outputs.value }}" >/dev/null 2>&1; then
+            echo "Version ${{ steps.version.outputs.value }} already exists. Increment package.json before releasing."
+            exit 1
+          fi
 
       # Zip the Package for release
       - name: Create Package Zip
