@@ -49,6 +49,14 @@ namespace PlayableTrackBaking
         double _lastUpdate;
         float _offset = 1.5f;
 
+        // --- マーカー変更の自動反映（再ベイク）---
+        const double RebakeDebounce = 0.25; // 最後の変更からこの秒数だけ待ってまとめて再ベイク
+        bool _autoReapply = true;
+        double _pendingRebakeAt = -1;       // <0 = 予約なし
+        string _appliedSig;                 // 直近で反映済みのフィールド署名
+        string _appliedRootsSig;            // 同・recordRoots だけの署名（構造変化の判定用）
+        string _lastSeenSig;                // 前フレームで見た署名（変化した瞬間だけデバウンスを張り直す）
+
         struct TrsSnapshot { public Transform tr; public Vector3 pos; public Quaternion rot; public Vector3 scale; }
         struct MuteSnapshot { public PlayableTrack track; public bool muted; }
 
@@ -112,6 +120,19 @@ namespace PlayableTrackBaking
 
             if (!_active)
                 return;
+
+            EditorGUILayout.Space();
+
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                _autoReapply = EditorGUILayout.ToggleLeft(
+                    new GUIContent("変更を自動反映",
+                        "Marker の Frame Rate / High Precision / Record Roots 等の変更を、プレビュー中に自動で再ベイクして反映します。\n重い（長尺 × High Precision）場合は OFF にして「再ベイク」ボタンで手動反映してください。"),
+                    _autoReapply, GUILayout.Width(140));
+                using (new EditorGUI.DisabledScope(_autoReapply))
+                    if (GUILayout.Button("再ベイク"))
+                        Rebake();
+            }
 
             EditorGUILayout.Space();
 
@@ -243,6 +264,13 @@ namespace PlayableTrackBaking
                 _playing = false;
                 _time = 0f;
                 _lastUpdate = EditorApplication.timeSinceStartup;
+
+                // 自動反映の基準署名を初期化（この時点の値が「反映済み」）
+                _appliedRootsSig = RootsSig();
+                _appliedSig = FullSig();
+                _lastSeenSig = _appliedSig;
+                _pendingRebakeAt = -1;
+
                 EditorApplication.update += OnEditorUpdate;
                 ApplyAt(0f);
             }
@@ -340,6 +368,13 @@ namespace PlayableTrackBaking
             if (!_active)
                 return;
             double now = EditorApplication.timeSinceStartup;
+
+            if (_autoReapply)
+                DetectAndScheduleRebake(now);
+
+            if (!_active) // 上の再ベイクがフル再スタートを予約して停止した場合に備える
+                return;
+
             if (_playing)
             {
                 _time += (float)(now - _lastUpdate);
@@ -349,6 +384,100 @@ namespace PlayableTrackBaking
             }
             _lastUpdate = now;
         }
+
+        // ---------------------------------------------------------------- マーカー変更の自動反映
+
+        // 署名が変化した瞬間だけデバウンスを張り直し、静止して閾値を過ぎたら再ベイクする。
+        void DetectAndScheduleRebake(double now)
+        {
+            string cur = FullSig();
+            if (cur != _lastSeenSig)
+            {
+                _lastSeenSig = cur;
+                // 反映済みと違えばデバウンス開始、元に戻ったら予約取り消し
+                _pendingRebakeAt = (cur != _appliedSig) ? now + RebakeDebounce : -1;
+            }
+            if (_pendingRebakeAt >= 0 && now >= _pendingRebakeAt)
+            {
+                _pendingRebakeAt = -1;
+                Rebake();
+            }
+        }
+
+        /// <summary>
+        /// マーカーの現在値でベイクし直してプレビューへ反映する。
+        ///  - recordRoots（対象そのもの）が変わった場合はゴースト/スナップショットの作り直しが要るため、
+        ///    StopPreview→StartPreview のフル再スタート（delayCall で update コールバック外へ逃がす）。
+        ///  - クリップ系（Frame Rate / High Precision / Reduction / Record All Properties）だけの変更なら、
+        ///    再 Record して _clips を差し替えるだけの軽い経路。
+        /// 自動反映 OFF 時は「再ベイク」ボタンからも呼ばれる。
+        /// </summary>
+        void Rebake()
+        {
+            if (!_active || _director == null || _marker == null)
+                return;
+
+            // 構造変化：安全のためフル再スタート（再入を避けて次ティックで実行）
+            if (RootsSig() != _appliedRootsSig)
+            {
+                EditorApplication.delayCall += () =>
+                {
+                    if (this == null) // ウィンドウが閉じられていたら何もしない
+                        return;
+                    StopPreview();
+                    StartPreview();
+                };
+                return;
+            }
+
+            // クリップ系のみ：再 Record → _clips 差し替え → 現在時刻で再サンプル
+            try
+            {
+                var recorded = PlayableTrackBakeCore.Record(_director, _timeline, _marker);
+                var clips = new AnimationClip[_originalRoots.Length];
+                for (int i = 0; i < _originalRoots.Length; i++)
+                {
+                    var root = _originalRoots[i];
+                    if (root == null)
+                        continue;
+                    foreach (var rec in recorded)
+                        if (rec.root == root) { clips[i] = rec.clip; break; }
+                }
+                _clips = clips;
+                _appliedSig = FullSig();
+                _lastSeenSig = _appliedSig;
+                ApplyAt(_time);
+            }
+            catch (Exception e)
+            {
+                Debug.LogException(e);
+            }
+        }
+
+        // 再ベイク要否を判定するためのフィールド署名。
+        // 構造署名 = director ＋ recordRoots の並び（インスタンス ID）。
+        // director / recordRoots が変わるとバインドや対象自体が変わるため、
+        // これが変化したら（クリップ差し替えではなく）フル再スタートに乗せる。
+        string RootsSig()
+        {
+            if (_marker == null)
+                return "";
+            var dir = _marker.director != null ? _marker.director : _marker.GetComponent<PlayableDirector>();
+            string dirId = dir != null ? dir.GetInstanceID().ToString() : "0";
+            string roots = _marker.recordRoots == null
+                ? ""
+                : string.Join(",", _marker.recordRoots.Select(r => r == null ? "0" : r.GetInstanceID().ToString()));
+            return dirId + ";" + roots;
+        }
+
+        string ClipSig()
+        {
+            if (_marker == null)
+                return "";
+            return $"{_marker.frameRate}|{_marker.highPrecision}|{_marker.highPrecisionReduction}|{_marker.recordAllProperties}";
+        }
+
+        string FullSig() => RootsSig() + "#" + ClipSig();
 
         void ApplyAt(float t)
         {
