@@ -90,8 +90,15 @@ __ndbake_temp__.meta
 # from vpm-manifest.json — do NOT commit the vendored package bodies)
 # ==============================================================
 VerificationProject/Packages/com.vrchat.*/
+TestProject/Packages/com.vrchat.*/
 # VRChat ClientSim local runtime storage
 VerificationProject/ClientSimStorage/
+TestProject/ClientSimStorage/
+TestProject/PlayableTrackBaker-TestResults.xml
+TestProject/ProjectSettings/*
+!TestProject/ProjectSettings/ProjectVersion.txt
+TestProject/Assets/*
+!TestProject/Assets/.gitkeep
 # Keep the dependency manifests so the SDK can be restored:
 #   VerificationProject/Packages/manifest.json
 #   VerificationProject/Packages/packages-lock.json

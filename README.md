@@ -63,9 +63,10 @@ Packages/net.tomo1560.playabletrackbaker/
 1. GitHub にこのリポジトリを push。
 2. **Settings → Secrets and variables → Actions → Variables** で
    リポジトリ変数 **`PACKAGE_NAME` = `net.tomo1560.playabletrackbaker`** を作成。
-3. **Settings → Pages** の Source を **"GitHub Actions"** に設定。
-4. **Actions → Build Release** を手動実行（`workflow_dispatch`）。→ Release が作られ、続けて listing がビルドされ Pages へ公開されます。
-5. 公開 URL（例: `https://tomo1560.github.io/PlayableTrackBaker/index.json`）を VCC/ALCOM の **Add Repository** に登録。
+3. **Settings → Secrets and variables → Actions → Secrets** で、GameCI 用の **`UNITY_LICENSE`**（`.ulf` ファイル全体）、**`UNITY_EMAIL`**（Unity ID のメールアドレス）、**`UNITY_PASSWORD`**（Unity ID のパスワード）を作成。
+4. **Settings → Pages** の Source を **"GitHub Actions"** に設定。
+5. **Actions → Build Release** を手動実行（`workflow_dispatch`）。Unity EditMode テストが成功した場合だけ Release が作られ、続けて listing が Pages へ公開されます。
+6. 公開 URL（例: `https://tomo1560.github.io/PlayableTrackBaker/index.json`）を VCC/ALCOM の **Add Repository** に登録。
 
 ### バージョンを上げて再リリース
 

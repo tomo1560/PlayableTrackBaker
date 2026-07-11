@@ -7,17 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-12
+
 ### Fixed
 
 - 同じ PlayableDirector に複数の `TimelineBakeMarker` がある場合、最後のマーカー以外の `[Baked]` トラックが消える問題を修正
 - 別シーンや別 Timeline に同名の Director / Record Root がある場合、手動ベイクの `.anim` が互いに上書きされる問題を修正
-- Timeline の長さがサンプリングフレーム境界と一致しない場合、軽量モードおよび追加プロパティの記録クリップが次フレームまで延びる問題を修正
+- Timeline の長さがサンプリングフレーム境界と一致しない場合、軽量モードおよび追加プロパティの記録終端が Timeline 終端と一致しない問題を修正
 
 ### Changed
 
 - リリース前にパッケージ構造、manifest、バージョン重複を検証するよう GitHub Actions を強化
-
-## [1.0.0] - 2026-07-12
+- Unity EditMode テストを CI とリリースの必須ゲートに追加
+- 非破壊ベイクの AssetDatabase 統合テストと、例外時の Timeline 状態復元を追加
 
 ### Added
 

@@ -1,0 +1,61 @@
+name: Unity EditMode Tests
+
+on:
+  workflow_call:
+    secrets:
+      UNITY_LICENSE:
+        required: true
+      UNITY_EMAIL:
+        required: true
+      UNITY_PASSWORD:
+        required: true
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  editmode-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore VRChat VPM dependencies
+        uses: anatawa12/sh-actions/resolve-vpm-packages@master
+        with:
+          project-path: TestProject
+
+      - name: Restore Unity Library cache
+        uses: actions/cache@v4
+        with:
+          path: TestProject/Library
+          key: Library-${{ runner.os }}-2022.3.22f1-${{ hashFiles('TestProject/Packages/**', 'Packages/net.tomo1560.playabletrackbaker/**') }}
+          restore-keys: |
+            Library-${{ runner.os }}-2022.3.22f1-
+
+      - name: Run EditMode tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: TestProject
+          unityVersion: 2022.3.22f1
+          testMode: EditMode
+          testFilter: PlayableTrackBaking.Tests
+          artifactsPath: TestResults
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: Unity EditMode Test Results
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-editmode-test-results
+          path: TestResults
+          if-no-files-found: warn

@@ -39,6 +39,10 @@ namespace PlayableTrackBaking
         public static List<(AnimationClip clip, GameObject root)> Record(
             PlayableDirector director, TimelineAsset timeline, TimelineBakeMarker marker)
         {
+            var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
+                .Select(track => (track, track.muted)).ToList();
+            double originalTime = director != null ? director.time : 0.0;
+
             // ミュートされたトラックは評価されず記録できないので、記録前に必ずアンミュート
             foreach (var pt in timeline.GetOutputTracks().OfType<PlayableTrack>())
                 pt.muted = false;
@@ -47,9 +51,26 @@ namespace PlayableTrackBaking
             double duration = timeline.duration;
             int frames = Mathf.CeilToInt((float)duration * fps);
 
-            return marker.highPrecision
-                ? RecordHighPrecision(director, marker, fps, duration, frames)
-                : RecordWithRecorder(director, marker, fps, duration, frames);
+            try
+            {
+                return marker.highPrecision
+                    ? RecordHighPrecision(director, marker, fps, duration, frames)
+                    : RecordWithRecorder(director, marker, fps, duration, frames);
+            }
+            catch
+            {
+                // 呼び出し先が例外を処理して編集を続けても、Timeline の状態を汚さない。
+                foreach (var (track, muted) in muteSnapshot)
+                    if (track != null)
+                        track.muted = muted;
+                if (director != null)
+                {
+                    director.time = originalTime;
+                    try { director.Evaluate(); }
+                    catch { /* 元の例外を優先する */ }
+                }
+                throw;
+            }
         }
 
         /// <summary>
@@ -101,6 +122,7 @@ namespace PlayableTrackBaking
                 var clip = new AnimationClip { frameRate = fps };
                 recorders[i].SaveToClip(clip, fps);
                 recorders[i].ResetRecording();
+                NormalizeRecorderEndTime(clip, (float)duration);
                 results.Add((clip, marker.recordRoots[i]));
             }
             return results;
@@ -162,8 +184,32 @@ namespace PlayableTrackBaking
 
             var results = new List<(AnimationClip, GameObject)>();
             foreach (var rc in captures)
-                results.Add((rc.BuildClip(fps, marker.highPrecisionReduction), rc.root));
+                results.Add((rc.BuildClip(fps, marker.highPrecisionReduction, (float)duration), rc.root));
             return results;
+        }
+
+        // GameObjectRecorder は最後のスナップショット値を、直前の内部記録時刻にキー化する。
+        // 最後の値は Timeline 終端で評価した値なので、各カーブの終端キーを正しい duration へ合わせる。
+        static void NormalizeRecorderEndTime(AnimationClip clip, float duration)
+        {
+            foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+            {
+                var curve = AnimationUtility.GetEditorCurve(clip, binding);
+                if (curve == null || curve.length == 0)
+                    continue;
+                var last = curve[curve.length - 1];
+                last.time = duration;
+                curve.MoveKey(curve.length - 1, last);
+                AnimationUtility.SetEditorCurve(clip, binding, curve);
+            }
+            foreach (var binding in AnimationUtility.GetObjectReferenceCurveBindings(clip))
+            {
+                var keys = AnimationUtility.GetObjectReferenceCurve(clip, binding);
+                if (keys == null || keys.Length == 0)
+                    continue;
+                keys[keys.Length - 1].time = duration;
+                AnimationUtility.SetObjectReferenceCurve(clip, binding, keys);
+            }
         }
 
         /// <summary>精度優先モードで 1 つの Record Root ぶんの Transform 曲線と追加プロパティを溜め込むバッファ。</summary>
@@ -183,24 +229,25 @@ namespace PlayableTrackBaking
                     tc.Capture(time);
             }
 
-            public AnimationClip BuildClip(float fps, float reduction)
+            public AnimationClip BuildClip(float fps, float reduction, float duration)
             {
                 var clip = new AnimationClip { frameRate = fps };
                 foreach (var tc in transforms)
                     tc.Apply(clip, reduction);
                 if (recorder != null)
-                    MergeExtraProperties(clip, fps);
+                    MergeExtraProperties(clip, fps, duration);
                 clip.EnsureQuaternionContinuity(); // クォータニオン曲線の符号反転を連続化
                 return clip;
             }
 
             // Transform 以外（BlendShape・マテリアル・有効/無効など）を GameObjectRecorder から取り込む。
             // Transform 系バインディングは手動キー化と重複するので除外する。
-            void MergeExtraProperties(AnimationClip clip, float fps)
+            void MergeExtraProperties(AnimationClip clip, float fps, float duration)
             {
                 var tmp = new AnimationClip { frameRate = fps };
                 recorder.SaveToClip(tmp, fps);
                 recorder.ResetRecording();
+                NormalizeRecorderEndTime(tmp, duration);
 
                 foreach (var b in AnimationUtility.GetCurveBindings(tmp))
                 {
@@ -651,7 +698,7 @@ namespace PlayableTrackBaking
         static PlayableDirector ResolveDirector(TimelineBakeMarker marker)
             => marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
 
-        static bool BakeNonDestructive(
+        internal static bool BakeNonDestructive(
             PlayableDirector director, IReadOnlyList<TimelineBakeMarker> markers)
         {
             if (director == null || !(director.playableAsset is TimelineAsset src))
@@ -682,24 +729,40 @@ namespace PlayableTrackBaking
                 return false;
             }
             var clone = AssetDatabase.LoadAssetAtPath<TimelineAsset>(clonePath);
+            if (clone == null)
+            {
+                AssetDatabase.DeleteAsset(clonePath);
+                return false;
+            }
+
             director.playableAsset = clone;
+            try
+            {
+                var recorded = new List<(AnimationClip clip, GameObject root)>();
+                foreach (var marker in validMarkers)
+                    recorded.AddRange(PlayableTrackBakeCore.Record(director, clone, marker));
 
-            var recorded = new List<(AnimationClip clip, GameObject root)>();
-            foreach (var marker in validMarkers)
-                recorded.AddRange(PlayableTrackBakeCore.Record(director, clone, marker));
+                // クリップはクローン Timeline のサブアセットとして持たせ、ビルドに含める
+                foreach (var (clip, _) in recorded)
+                    AssetDatabase.AddObjectToAsset(clip, clone);
 
-            // クリップはクローン Timeline のサブアセットとして持たせ、ビルドに含める
-            foreach (var (clip, _) in recorded)
-                AssetDatabase.AddObjectToAsset(clip, clone);
+                PlayableTrackBakeCore.AddBakedTracks(director, clone, recorded, true);
 
-            PlayableTrackBakeCore.AddBakedTracks(director, clone, recorded, true);
-
-            EditorUtility.SetDirty(clone);
-            EditorUtility.SetDirty(director);
-            return true;
+                EditorUtility.SetDirty(clone);
+                EditorUtility.SetDirty(director);
+                return true;
+            }
+            catch
+            {
+                // 失敗したクローンを Director に残さず、次のビルドへ持ち越さない。
+                director.playableAsset = src;
+                AssetDatabase.DeleteAsset(clonePath);
+                EditorUtility.SetDirty(director);
+                throw;
+            }
         }
 
-        static void EnsureTempFolder()
+        internal static void EnsureTempFolder()
         {
             PlayableTrackBakeCore.EnsureFolder();
             if (!AssetDatabase.IsValidFolder(TempFolder))

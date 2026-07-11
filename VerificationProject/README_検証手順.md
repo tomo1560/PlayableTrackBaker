@@ -10,12 +10,9 @@
 
 | パス | 役割 |
 | --- | --- |
-| `Assets/PlayableTrackBaker/TimelineBakeMarker.cs` | ベイク対象マーカー（本体のコピー） |
-| `Assets/PlayableTrackBaker/Editor/PlayableTrackBaker.cs` | ベイク処理本体（本体のコピー） |
-| `Assets/PlayableTrackBakerTests/Samples/MoveSamplePlayable.cs` | 検証用の自作 PlayableTrack。キューブを正弦波で上下に動かす（VRChat では動かない＝ベイク対象） |
+| `Packages/manifest.json` | `net.tomo1560.playabletrackbaker` をリポジトリ内の UPM パッケージから参照 |
+| `Assets/PlayableTrackBakerTests/Samples/MoveSamplePlayableAsset.cs` | 検証用の自作 PlayableTrack。キューブを正弦波で上下に動かす（VRChat では動かない＝ベイク対象） |
 | `Assets/PlayableTrackBakerTests/Editor/BakeTestSetup.cs` | 検証シーンを自動生成するメニュー |
-
-`Assets/PlayableTrackBaker/` 以下の2ファイルはリポジトリ本体のコピーです。本体を更新したら差し替えてください。
 
 ## 手順
 
@@ -50,7 +47,7 @@ Unity に戻ってコンパイルが通れば準備完了です（エラーが�
 
 メニュー **Tools > Timeline > Bake All PlayableTracks** を実行します（または `TimelineBakeMarker` のインスペクタの **Bake This PlayableTrack** ボタン／コンポーネント右クリック **> Bake This** でも可）。想定される結果:
 
-- `Assets/BakedTimelineClips/BakeTest_Director_BakeTest_Target_0_baked.anim` が生成される
+- `Assets/BakedTimelineClips/BakeTest_Director_BakeTest_Target_<安定ハッシュ>_baked.anim` が生成される
 - Timeline に `[Baked] BakeTest_Target` という AnimationTrack が追加される
 - 元の `Move (Custom PlayableTrack)` が**自動でミュート**される（`Mute Playable Tracks After Bake` が既定オンのため）
 - `BakeTest_Target` に `Animator` が自動追加される
@@ -63,7 +60,7 @@ Unity に戻ってコンパイルが通れば準備完了です（エラーが�
 
 ## チェックポイント（修正点の検証）
 
-- **パス衝突修正**: `recordRoots` に同名オブジェクトを2つ入れても、`..._0_baked.anim` / `..._1_baked.anim` と別ファイルになる。
+- **パス衝突修正**: `recordRoots` に同名オブジェクトを2つ入れても、オブジェクト識別子を含む異なる安定ハッシュで別ファイルになる。
 - **自動ミュート**: 手動ベイク後にエディタで元トラックが鳴らず、二重再生にならない。再ベイクしても（内部で一旦アンミュートするため）記録が空にならない。
 - **null ガード**: `recordRoots` に空要素があっても例外で止まらず、警告ログを出してスキップする。
 - **float 精度**: `Frame Rate` を上げても、長いクリップでタイミングがズレにくい。
@@ -79,10 +76,6 @@ Unity に戻ってコンパイルが通れば準備完了です（エラーが�
 5. Console に `[PlayableTrackBaker] N 個の Timeline を非破壊ベイクしました（ビルド用コピー）。` が出ていること。
 6. アップロードしたワールド（または Build & Test のローカル起動）でキューブが上下に動けば、VRChat 上でも `[Baked]` トラックが機能していることの確認になります。
 
-### 未検証事項（Unity 実機で要確認）
+### 実機検証状況
 
-私（作成者）の環境では Unity を実行できないため、以下は実機での確認をお願いします。うまく動かない場合はログを共有してください。
-
-- この VRChat SDK バージョンで `IProcessSceneWithReport.OnProcessScene` がワールドのアップロードビルドで発火するか。
-- 我々のコールバック（`callbackOrder = -10000`）が、VRChat による `IEditorOnly`（`TimelineBakeMarker`）除去より**先**に走り、マーカーを拾えるか。
-- ビルド用コピーシーン上での `PlayableDirector.Evaluate()` による記録と、`AssetDatabase.CopyAsset`／`AddObjectToAsset` がビルド中に問題なく動くか。
+VRChat SDK 3.10.4 / Unity 2022.3.22f1 で、`IProcessSceneWithReport` の発火、`IEditorOnly` 除去前のマーカー取得、Timeline クローンとサブアセットクリップを使った非破壊ベイクを確認済みです。
