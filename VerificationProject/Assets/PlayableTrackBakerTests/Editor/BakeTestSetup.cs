@@ -104,7 +104,7 @@ namespace PlayableTrackBaking.Tests
             {
                 Debug.Log(
                     "[BakeTestSetup] 精度優先（High Precision）検証セットアップを作成しました。\n" +
-                    "1) Tools > Timeline > Bake PlayableTracks Now を実行。\n" +
+                    "1) Tools > Timeline > Bake All PlayableTracks を実行。\n" +
                     "2) Assets/BakedTimelineClips/ の生成 .anim を選び、Animation または Curves 表示でキーを確認。\n" +
                     "   - 精度優先: サンプルした全フレーム（4 秒 × 60fps ＝ 約 241 キー）が残り、各サンプル点を厳密に通る。\n" +
                     "   - 軽量版（Create Bake Test Setup で生成）と見比べると、軽量版はキーフレーム削減でキー数が少ない。\n" +
@@ -116,7 +116,7 @@ namespace PlayableTrackBaking.Tests
                 Debug.Log(
                     "[BakeTestSetup] 軽量（High Precision オフ）検証セットアップを作成しました。\n" +
                     "1) Timeline ウィンドウで BakeTest_Director を選び、再生ヘッドを動かすとキューブが上下します（自作 PlayableTrack）。\n" +
-                    "2) Tools > Timeline > Bake PlayableTracks Now を実行。\n" +
+                    "2) Tools > Timeline > Bake All PlayableTracks を実行。\n" +
                     "3) 実行後は元の PlayableTrack が自動ミュートされ、[Baked] トラックだけで同じ動きになれば成功です。\n" +
                     "精度優先版と比較したい場合は Tools > Timeline > Create Bake Test Setup (High Precision) も実行してください（X+3 に並びます）。",
                     directorGo);

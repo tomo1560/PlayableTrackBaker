@@ -419,7 +419,7 @@ namespace PlayableTrackBaking
 
     /// <summary>
     /// 手動プレビュー用の「破壊的」ベイク。
-    /// Tools > Timeline > Bake PlayableTracks Now から実行し、開いているシーンの
+    /// Tools > Timeline > Bake All PlayableTracks から実行し、開いているシーンの
     /// TimelineAsset を直接書き換えて [Baked] トラックを追加する（結果をエディタで目視確認できる）。
     ///
     /// アップロード時の自動ベイクは PlayableTrackBakeSceneProcessor（非破壊）が担当するため、
@@ -493,6 +493,10 @@ namespace PlayableTrackBaking
 
             PlayableTrackBakeCore.EnsureFolder();
 
+            // Record は PlayableTrack を unmute する副作用があるので muted 状態を退避（破壊的ベイクではアセットにそのまま保存されてしまうため）
+            var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
+                .Select(pt => (track: pt, muted: pt.muted)).ToList();
+
             var recorded = PlayableTrackBakeCore.Record(director, timeline, marker);
 
             // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
@@ -514,6 +518,14 @@ namespace PlayableTrackBaking
             }
 
             PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, marker.mutePlayableTracksAfterBake);
+
+            // 全ミュートしない設定のときは、ユーザーが意図的にミュートしていたトラックを元へ戻す
+            if (!marker.mutePlayableTracksAfterBake)
+            {
+                foreach (var (track, muted) in muteSnapshot)
+                    if (track != null)
+                        track.muted = muted;
+            }
 
             EditorUtility.SetDirty(timeline);
             EditorUtility.SetDirty(director);
