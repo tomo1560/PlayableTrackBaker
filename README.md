@@ -1,13 +1,15 @@
-# PlayableTrackBaker for VRChat Worlds
+# PlayableTrackBaker for VRChat
 
 VRChat ワールドのアップロード（Build & Publish）時に、Timeline の **PlayableTrack（カスタムトラック）の評価結果を AnimationClip に自動ベイク**し、AnimationTrack として同じ Timeline に追加するエディタ拡張です。
 
 VRChat ワールドでは Timeline 自体は動作しますが、PlayableTrack と SignalEmitter はカスタム C# コードに依存するため動作しません。このツールを使うと、エディタ上でカスタムトラックが生み出す動きをそのまま AnimationClip に焼き込み、VRChat 上でも再生できるようにします。
 
+アバタープロジェクトでも、Timeline をオーサリングツールとして使う形で手動ベイクとゴースト比較プレビューを利用できます（自動ベイクはワールド専用。詳細は「[アバタープロジェクトでの利用](#アバタープロジェクトでの利用)」参照）。
+
 ## 動作環境
 
 - Unity 2022.3 系（VRChat 推奨バージョン）
-- VRChat SDK3 - Worlds（VCC / ALCOM でのインストールを想定）
+- VRChat SDK3 - Worlds または Avatars（VCC / ALCOM でのインストールを想定。依存は両者共通の base パッケージ `com.vrchat.base`）
 - Timeline パッケージ（com.unity.timeline）
 
 ## 導入
@@ -26,7 +28,7 @@ Unity プロジェクトの `Packages/manifest.json` の `dependencies` に、�
   `"net.tomo1560.playabletrackbaker": "https://github.com/tomo1560/PlayableTrackBaker.git?path=Packages/net.tomo1560.playabletrackbaker"`
   のように指定します（GitHub リポジトリ名を `PlayableTrackBaker` とした場合。以降の URL 例もこの前提です）。
 - 本リポジトリの `VerificationProject/` は前者（`file:` ローカル参照）でこのパッケージを取り込む検証用プロジェクトです。
-- パッケージは VRChat Worlds SDK（`VRC.SDKBase`）と Timeline（`com.unity.timeline`）に依存します。
+- パッケージは VRChat SDK の base パッケージ（`com.vrchat.base` / `VRC.SDKBase`。Worlds・Avatars どちらの SDK にも含まれます）と Timeline（`com.unity.timeline`）に依存します。
 
 パッケージ内の構成:
 
@@ -111,6 +113,29 @@ Packages/net.tomo1560.playabletrackbaker/
 ### 4. アップロードする
 
 VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前に**非破壊**の自動ベイクが走ります。開いているシーンや `.playable` アセットには一切変更が残らないため、手動ベイクした `[Baked]` トラックが残っていなくても、アップロードには自動で焼き込まれます。
+
+## アバタープロジェクトでの利用
+
+アバタープロジェクトでは、**Timeline を「動きのオーサリングツール」として使い、その結果を `.anim` に書き出す**用途で利用できます。ワールドとはできることが異なります。
+
+| 機能 | アバターでの可否 |
+| --- | --- |
+| 手動ベイク（Tools > Timeline > Bake All 等） | ○ そのまま使える |
+| ゴースト比較プレビュー | ○ そのまま使える |
+| アップロード時の自動ベイク | ✕ ワールド専用（下記参照） |
+
+**ワークフロー:**
+
+1. エディタ上で Timeline + カスタム PlayableTrack で動きを作り、`TimelineBakeMarker` を設定する（ワールドと同じ手順）。
+2. 手動ベイクを実行し、`Assets/BakedTimelineClips/` に生成された `.anim` を得る。
+3. その clip を**自分でアバターの Animator Controller（FX レイヤー等）に組み込む**（Modular Avatar / VRCFury などの利用も可）。clip の組み込みはこのツールの守備範囲外です。
+
+**ワールドとの違い・注意点:**
+
+- **アバターでは Timeline 自体が再生されません。** PlayableDirector はアバターの許可コンポーネントに含まれないため、`[Baked]` トラックを追加した Timeline をアバターに含めても動きません。動きの再生はあくまで Animator Controller 経由です。ベイクに使った Timeline / PlayableDirector 一式はアバターに含めないでください。
+- **自動ベイクは発火しません。** アップロード時の自動ベイクはシーンビルド時のフック（`IProcessSceneWithReport`）で動くため、プレハブ単位でビルドされるアバターでは実行されません。必ず手動ベイクを使ってください。
+- **Humanoid ボーンには使えません。** ベイク結果は generic な Transform カーブなので、Humanoid リグのボーンに適用するとヒューマノイドアニメーションと競合します。対象は非 Humanoid の子オブジェクト（小物・ギミック・アクセサリ等）に限定してください。
+- **clip のパスは Record Root からの相対**です。Animator Controller に載せる際は、アニメーションさせる階層が Record Root と同じ相対パスになるようレイヤー／Animator の配置に注意してください（Record Root 自体に Animator を置くのが確実です）。
 
 ## 仕組み（2 つのモード）
 

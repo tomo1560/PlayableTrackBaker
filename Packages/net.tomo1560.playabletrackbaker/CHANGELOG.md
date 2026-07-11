@@ -18,5 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Record All Properties オプション: Transform 以外の animatable プロパティ（BlendShape・マテリアル等）も記録
 - Mute Playable Tracks After Bake オプション: ベイク後に元の PlayableTrack を自動ミュートして二重再生を防止
 - ビルド失敗時の一時アセット自動クリーンアップ
+- アバタープロジェクト対応: VPM 依存を `com.vrchat.base` にし、Worlds / Avatars 両プロジェクトで導入可能に。アバターでは手動ベイク＋ゴースト比較プレビューを利用できる（アップロード時の自動ベイクはワールド専用。生成した clip の Animator Controller への組み込みは手動）
 
 [1.0.0]: https://github.com/tomo1560/PlayableTrackBaker/releases/tag/1.0.0
