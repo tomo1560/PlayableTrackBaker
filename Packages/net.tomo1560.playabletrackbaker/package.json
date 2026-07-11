@@ -14,6 +14,9 @@
     "playable",
     "bake"
   ],
+  "vpmDependencies": {
+    "com.vrchat.worlds": ">=3.10.4"
+  },
   "dependencies": {
     "com.unity.timeline": "1.7.6"
   }

@@ -24,7 +24,7 @@ Unity プロジェクトの `Packages/manifest.json` の `dependencies` に、�
 
 - ローカル参照なら `file:` に相対パスを、Git 参照なら
   `"net.tomo1560.playabletrackbaker": "https://github.com/tomo1560/PlayableTrackBaker.git?path=Packages/net.tomo1560.playabletrackbaker"`
-  のように指定します。
+  のように指定します（GitHub リポジトリ名を `PlayableTrackBaker` とした場合。以降の URL 例もこの前提です）。
 - 本リポジトリの `VerificationProject/` は前者（`file:` ローカル参照）でこのパッケージを取り込む検証用プロジェクトです。
 - パッケージは VRChat Worlds SDK（`VRC.SDKBase`）と Timeline（`com.unity.timeline`）に依存します。
 
@@ -45,6 +45,29 @@ Packages/net.tomo1560.playabletrackbaker/
 ### B. ソースを直接 Assets に置く（ドロップイン）
 
 パッケージ管理を使わない場合は、上記 3 つの `.cs` を Assets 内へコピーしても動きます。その際は `PlayableTrackBaker.cs` と `PlayableTrackPreview.cs`（非破壊のゴースト比較プレビュー）を必ず **`Editor` フォルダ内**へ、`TimelineBakeMarker.cs` はランタイム側へ置いてください。asmdef を使わない場合は `Editor` フォルダ規約だけで分離されます。
+
+## 配布（VPM リポジトリ / VCC・ALCOM）
+
+このリポジトリは GitHub Actions ＋ GitHub Pages で **VPM リポジトリ（VCC/ALCOM の "Add Repository" で登録できる listing）** を自前ホストできる構成になっています（VRChat 公式テンプレート `vrchat-community/template-package` 準拠）。
+
+構成要素:
+
+- `.github/workflows/release.yml` — 手動実行（Build Release）で、`package.json` の `version` を元にタグを打ち、パッケージ `.zip` ＋ `.unitypackage` ＋ `package.json` を GitHub Release に添付。
+- `.github/workflows/build-listing.yml` — Release 後に `vrchat-community/package-list-action` で Release 群から `index.json`（VPM listing）を生成し、`Website/` の表示ページごと GitHub Pages へ公開。
+- `Website/` — listing 表示ページ（"Add to VCC" ボタン付き）のテンプレート。
+
+### 公開手順（初回セットアップ）
+
+1. GitHub にこのリポジトリを push。
+2. **Settings → Secrets and variables → Actions → Variables** で
+   リポジトリ変数 **`PACKAGE_NAME` = `net.tomo1560.playabletrackbaker`** を作成。
+3. **Settings → Pages** の Source を **"GitHub Actions"** に設定。
+4. **Actions → Build Release** を手動実行（`workflow_dispatch`）。→ Release が作られ、続けて listing がビルドされ Pages へ公開されます。
+5. 公開 URL（例: `https://tomo1560.github.io/PlayableTrackBaker/index.json`）を VCC/ALCOM の **Add Repository** に登録。
+
+### バージョンを上げて再リリース
+
+`Packages/net.tomo1560.playabletrackbaker/package.json` の `version` を上げて push → **Build Release** を実行するだけ。タグ・Release・listing 更新まで自動です。
 
 ## 使い方
 
