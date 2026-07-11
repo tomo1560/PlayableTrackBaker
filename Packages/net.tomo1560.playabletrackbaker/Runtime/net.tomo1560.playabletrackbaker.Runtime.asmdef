@@ -1,0 +1,16 @@
+{
+    "name": "net.tomo1560.playabletrackbaker.Runtime",
+    "rootNamespace": "PlayableTrackBaking",
+    "references": [
+        "VRC.SDKBase"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,20 @@
+{
+    "name": "net.tomo1560.playabletrackbaker.Editor",
+    "rootNamespace": "PlayableTrackBaking",
+    "references": [
+        "net.tomo1560.playabletrackbaker.Runtime",
+        "Unity.Timeline",
+        "VRC.SDKBase"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

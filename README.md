@@ -12,19 +12,39 @@ VRChat ワールドでは Timeline 自体は動作しますが、PlayableTrack �
 
 ## 導入
 
-1. `TimelineBakeMarker.cs` を任意のスクリプトフォルダ（例: `Assets/PlayableTrackBaker/`）に配置します。
-2. `PlayableTrackBaker.cs` を **`Editor` フォルダ内**（例: `Assets/PlayableTrackBaker/Editor/`）に配置します。
+このリポジトリは UPM パッケージ `net.tomo1560.playabletrackbaker`（`Packages/net.tomo1560.playabletrackbaker/`）として構成されています。導入方法は 2 通りです。
 
-```
-Assets/
-└── PlayableTrackBaker/
-    ├── TimelineBakeMarker.cs
-    └── Editor/
-        ├── PlayableTrackBaker.cs
-        └── PlayableTrackPreview.cs
+### A. UPM パッケージとして参照（推奨）
+
+Unity プロジェクトの `Packages/manifest.json` の `dependencies` に、パッケージへのパスを追加します。
+
+```json
+"net.tomo1560.playabletrackbaker": "file:../../Packages/net.tomo1560.playabletrackbaker"
 ```
 
-`PlayableTrackPreview.cs`（非破壊のゴースト比較プレビュー）も `Editor` フォルダ内に置きます。
+- ローカル参照なら `file:` に相対パスを、Git 参照なら
+  `"net.tomo1560.playabletrackbaker": "https://github.com/tomo1560/PlayableTrackBaker.git?path=Packages/net.tomo1560.playabletrackbaker"`
+  のように指定します。
+- 本リポジトリの `VerificationProject/` は前者（`file:` ローカル参照）でこのパッケージを取り込む検証用プロジェクトです。
+- パッケージは VRChat Worlds SDK（`VRC.SDKBase`）と Timeline（`com.unity.timeline`）に依存します。
+
+パッケージ内の構成:
+
+```
+Packages/net.tomo1560.playabletrackbaker/
+├── package.json
+├── Runtime/
+│   ├── net.tomo1560.playabletrackbaker.Runtime.asmdef   (VRC.SDKBase 参照)
+│   └── TimelineBakeMarker.cs
+└── Editor/
+    ├── net.tomo1560.playabletrackbaker.Editor.asmdef     (Runtime + Unity.Timeline 参照)
+    ├── PlayableTrackBaker.cs
+    └── PlayableTrackPreview.cs
+```
+
+### B. ソースを直接 Assets に置く（ドロップイン）
+
+パッケージ管理を使わない場合は、上記 3 つの `.cs` を Assets 内へコピーしても動きます。その際は `PlayableTrackBaker.cs` と `PlayableTrackPreview.cs`（非破壊のゴースト比較プレビュー）を必ず **`Editor` フォルダ内**へ、`TimelineBakeMarker.cs` はランタイム側へ置いてください。asmdef を使わない場合は `Editor` フォルダ規約だけで分離されます。
 
 ## 使い方
 
