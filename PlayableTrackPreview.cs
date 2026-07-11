@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Playables;
@@ -167,9 +168,18 @@ namespace PlayableTrackBaking
             }
             if (AnimationMode.InAnimationMode())
             {
-                EditorUtility.DisplayDialog("Bake Preview",
-                    "別のツール（Animation ウィンドウ等）が AnimationMode を使用中のため開始できません。閉じてから再試行してください。", "OK");
-                return;
+                // 最多の原因は Timeline ウィンドウの Preview（既定 ON）。まず自動で OFF にして続行を試みる。
+                if (TryDisableTimelinePreview())
+                    Debug.Log("[BakePreview] Timeline ウィンドウの Preview が AnimationMode を握っていたため、自動で OFF にしました。");
+
+                if (AnimationMode.InAnimationMode())
+                {
+                    EditorUtility.DisplayDialog("Bake Preview",
+                        "AnimationMode を他のツールが使用中のため開始できません。\n\n" +
+                        "多くの場合、Timeline ウィンドウの Preview（プレビュー）が原因です。自動解除を試みましたが解けませんでした。\n" +
+                        "Timeline ウィンドウ左上の Preview ボタンを OFF にするか、Animation ウィンドウを閉じてから再試行してください。", "OK");
+                    return;
+                }
             }
 
             _director = director;
@@ -271,6 +281,56 @@ namespace PlayableTrackBaking
             RestoreTrs(); // 最後に元の TRS へ戻す（以降 Evaluate しない）
 
             SceneView.RepaintAll();
+        }
+
+        /// <summary>
+        /// 開いている Timeline ウィンドウの Preview を OFF にして AnimationMode を解放する（1 つでも外せたら true）。
+        ///
+        /// Timeline ウィンドウは Preview（既定 ON）の間エディタを AnimationMode に入れるため、
+        /// Bake Preview の AnimationMode 占有と競合する。内部 API
+        /// （UnityEditor.Timeline.TimelineWindow / WindowState.previewMode）へのリフレクションなので、
+        /// 構造が異なる Unity/Timeline 版では黙って false を返し、呼び出し側は改善メッセージへフォールバックする。
+        /// 動作確認: Unity 2022.3 / com.unity.timeline 1.7。
+        /// </summary>
+        static bool TryDisableTimelinePreview()
+        {
+            try
+            {
+                var winType = AppDomain.CurrentDomain.GetAssemblies()
+                    .Select(a => a.GetType("UnityEditor.Timeline.TimelineWindow"))
+                    .FirstOrDefault(t => t != null);
+                if (winType == null)
+                    return false;
+
+                // instance が未設定でも拾えるよう、ロード済みの全ウィンドウを走査する
+                var windows = Resources.FindObjectsOfTypeAll(winType);
+                if (windows == null || windows.Length == 0)
+                    return false;
+
+                const BindingFlags F = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+                var stateProp = winType.GetProperty("state", F);
+                if (stateProp == null)
+                    return false;
+
+                bool disabledAny = false;
+                foreach (var win in windows)
+                {
+                    var state = stateProp.GetValue(win);
+                    var previewProp = state?.GetType().GetProperty("previewMode", F);
+                    if (previewProp == null || !previewProp.CanWrite || !previewProp.CanRead)
+                        continue;
+                    if ((bool)previewProp.GetValue(state))
+                    {
+                        previewProp.SetValue(state, false); // setter が同期的に AnimationMode を停止する
+                        disabledAny = true;
+                    }
+                }
+                return disabledAny;
+            }
+            catch
+            {
+                return false; // 内部 API 差異は握りつぶし、改善メッセージにフォールバック
+            }
         }
 
         // ---------------------------------------------------------------- 毎フレーム／適用
