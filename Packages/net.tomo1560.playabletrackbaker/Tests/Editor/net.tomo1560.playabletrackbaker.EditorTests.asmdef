@@ -1,0 +1,27 @@
+{
+    "name": "net.tomo1560.playabletrackbaker.EditorTests",
+    "rootNamespace": "PlayableTrackBaking.Tests",
+    "references": [
+        "net.tomo1560.playabletrackbaker.Runtime",
+        "net.tomo1560.playabletrackbaker.Editor",
+        "Unity.Timeline",
+        "VRC.SDKBase",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
