@@ -254,6 +254,37 @@ namespace PlayableTrackBaking.Tests
         }
 
         [Test]
+        public void DestructiveBake_UndoRestoresPlayableTrackMuteState()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            AssetDatabase.CreateAsset(timeline, TimelinePath);
+            var playableTrack = timeline.CreateTrack<PlayableTrack>(null, "Custom Playable");
+            playableTrack.CreateClip<SineMoveTestPlayableAsset>().duration = 1.0;
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = 1.0;
+
+            _target = new GameObject("UndoMuteTarget");
+            _directorObject = new GameObject("UndoMuteDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.director = director;
+            marker.recordRoots = new[] { _target };
+            marker.frameRate = 10f;
+            marker.mutePlayableTracksAfterBake = true;
+            _generatedClipPath = PlayableTrackBakeCore.BuildClipAssetPath(
+                director, timeline, _target, 0);
+
+            Assert.IsTrue(PlayableTrackBaker.BakeDestructive(marker));
+            Assert.IsTrue(playableTrack.muted, "Bake 後は PlayableTrack がミュートされるはず");
+
+            Undo.PerformUndo();
+
+            Assert.IsFalse(playableTrack.muted,
+                "Bake の Undo で PlayableTrack の元の mute 状態を復元すべき");
+        }
+
+        [Test]
         public void DestructiveBake_FailureRollsBackAssetsTimelineAnimatorAndBinding()
         {
             var timeline = ScriptableObject.CreateInstance<TimelineAsset>();

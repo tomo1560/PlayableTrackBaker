@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- 手動ベイク後に Timeline ウィンドウが即時更新されず、Undo で PlayableTrack の mute 状態が戻らない問題を修正
 - 手動ベイク失敗時に、既存 AnimationClip、Timeline、binding、追加 Animator、新規アセットを元の状態へ戻すよう修正
 - ツール生成クリップの専用署名で所有権を判定し、ユーザー作成の `[Baked]` トラックを削除しないよう修正
 - ビルド一時フォルダ内のユーザー資産を削除せず、所有ラベル付き生成物だけを掃除するよう修正

@@ -4,6 +4,7 @@
     "references": [
         "net.tomo1560.playabletrackbaker.Runtime",
         "Unity.Timeline",
+        "Unity.Timeline.Editor",
         "VRC.SDKBase"
     ],
     "includePlatforms": [

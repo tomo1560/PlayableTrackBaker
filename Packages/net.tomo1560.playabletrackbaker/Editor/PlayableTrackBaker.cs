@@ -6,6 +6,7 @@ using UnityEditor;
 using UnityEditor.Animations;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
+using UnityEditor.Timeline;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
@@ -678,9 +679,15 @@ namespace PlayableTrackBaking
             var overwrittenAssets = new List<(AnimationClip asset, AnimationClip snapshot)>();
             Undo.IncrementCurrentGroup();
             int undoGroup = Undo.GetCurrentGroup();
-            Undo.SetCurrentGroupName("Bake Playable Tracks");
+            // Timeline 1.7.x は "Timeline" で始まる Undo 名を検知してウィンドウを再構築する。
+            Undo.SetCurrentGroupName("Timeline Bake Playable Tracks");
             Undo.RegisterCompleteObjectUndo(timeline, "Bake Playable Tracks");
             Undo.RegisterCompleteObjectUndo(director, "Bake Playable Tracks");
+            // muted は TimelineAsset ではなく各 TrackAsset に直列化されるため、
+            // Record が一時的に unmute する前の状態を TrackAsset 自身へ登録する。
+            foreach (var (track, _) in muteSnapshot)
+                if (track != null)
+                    Undo.RegisterCompleteObjectUndo(track, "Bake Playable Tracks");
             bool succeeded = false;
             try
             {
@@ -745,6 +752,8 @@ namespace PlayableTrackBaking
 
             EditorUtility.SetDirty(timeline);
             EditorUtility.SetDirty(director);
+            // 非破壊 build は AddBakedTracks を直接呼ぶため、Editor UI 更新は手動 Bake に限定する。
+            TimelineEditor.Refresh(RefreshReason.ContentsAddedOrRemoved);
             Debug.Log($"[PlayableTrackBaker] {director.name}: PlayableTrack をベイクしました（手動・破壊的）。", director);
             return true;
         }
