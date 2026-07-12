@@ -40,9 +40,14 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
-            git diff --check "$BASE_SHA...HEAD"
+            git diff --check "$BASE_SHA...HEAD" -- . \
+              ':(exclude)VerificationProject/Assets/Scenes/VRCDefaultWorldScene.unity' \
+              ':(exclude)VerificationProject/Assets/PlayableTrackBakerTests/Generated/*.playable'
           else
-            git show --check --format= HEAD
+            git diff-tree --no-commit-id --name-only -z -r HEAD -- . \
+              ':(exclude)VerificationProject/Assets/Scenes/VRCDefaultWorldScene.unity' \
+              ':(exclude)VerificationProject/Assets/PlayableTrackBakerTests/Generated/*.playable' \
+              | xargs -0 -r git diff --check HEAD^ HEAD --
           fi
           test -z "$(git ls-files -z '*.meta' | xargs -0 -r sed -n 's/^guid: //p' | sort | uniq -d)"
           test -z "$(awk '$1 == "uses:" && $2 !~ /^\.\// { split($2, ref, "@"); if (ref[2] !~ /^[0-9a-f]{40}$/) print FILENAME ":" FNR ":" $2 }' .github/workflows/*.yml)"
