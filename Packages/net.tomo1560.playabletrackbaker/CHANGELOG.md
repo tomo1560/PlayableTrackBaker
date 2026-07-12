@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-13
+
 ### Fixed
 
 - 手動ベイク後に Timeline ウィンドウが即時更新されず、Undo で PlayableTrack の mute 状態が戻らない問題を修正
@@ -48,4 +50,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - アバタープロジェクト対応: VPM 依存を `com.vrchat.base` にし、Worlds / Avatars 両プロジェクトで導入可能に。アバターでは手動ベイク＋ゴースト比較プレビューを利用できる（アップロード時の自動ベイクはワールド専用。生成した clip の Animator Controller への組み込みは手動）
 
 [1.0.0]: https://github.com/tomo1560/PlayableTrackBaker/releases/tag/1.0.0
-[Unreleased]: https://github.com/tomo1560/PlayableTrackBaker/compare/1.0.0...HEAD
+[1.1.0]: https://github.com/tomo1560/PlayableTrackBaker/releases/tag/1.1.0
+[Unreleased]: https://github.com/tomo1560/PlayableTrackBaker/compare/1.1.0...HEAD
