@@ -11,12 +11,12 @@ on:
         required: true
   workflow_dispatch:
   pull_request:
+  merge_group:
   push:
     branches: [master]
 
 permissions:
   contents: read
-  checks: write
 
 jobs:
   repository-validation:
@@ -24,14 +24,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
       - name: Validate package manifest
         run: |
+          test -f Packages/net.tomo1560.playabletrackbaker/Runtime/net.tomo1560.playabletrackbaker.Runtime.asmdef
+          test -f Packages/net.tomo1560.playabletrackbaker/Editor/net.tomo1560.playabletrackbaker.Editor.asmdef
+          test -f Packages/net.tomo1560.playabletrackbaker/Tests/Editor/net.tomo1560.playabletrackbaker.EditorTests.asmdef
           jq -e '.name == "net.tomo1560.playabletrackbaker"' Packages/net.tomo1560.playabletrackbaker/package.json
           jq -e '.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")' Packages/net.tomo1560.playabletrackbaker/package.json
+          jq -e '.unity == "2022.3"' Packages/net.tomo1560.playabletrackbaker/package.json
+          jq empty TestProject/Packages/manifest.json TestProject/Packages/packages-lock.json TestProject/Packages/vpm-manifest.json
+      - name: Validate repository hygiene
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE_SHA" ]; then
+            git diff --check "$BASE_SHA...HEAD"
+          else
+            git show --check --format= HEAD
+          fi
+          test -z "$(git ls-files -z '*.meta' | xargs -0 -r sed -n 's/^guid: //p' | sort | uniq -d)"
+          test -z "$(awk '$1 == "uses:" && $2 !~ /^\.\// { split($2, ref, "@"); if (ref[2] !~ /^[0-9a-f]{40}$/) print FILENAME ":" FNR ":" $2 }' .github/workflows/*.yml)"
 
   editmode-tests:
     needs: repository-validation
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'merge_group'
+    permissions:
+      contents: read
+      checks: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -62,8 +83,9 @@ jobs:
           testMode: EditMode
           testFilter: PlayableTrackBaking.Tests
           artifactsPath: TestResults
-          coverageOptions: generateAdditionalMetrics;generateHtmlReport;generateBadgeReport;assemblyFilters:+net.tomo1560.playabletrackbaker.Runtime,+net.tomo1560.playabletrackbaker.Editor,-net.tomo1560.playabletrackbaker.EditorTests
+          coverageOptions: generateAdditionalMetrics;generateHtmlReport;generateBadgeReport;assemblyFilters:+net.tomo1560.playabletrackbaker.Runtime,+net.tomo1560.playabletrackbaker.Editor,-net.tomo1560.playabletrackbaker.EditorTests;pathFilters:-**/PlayableTrackPreview.cs
           coveragePath: CodeCoverage
+          customParameters: -debugCodeOptimization
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity EditMode Test Results
 
@@ -79,7 +101,7 @@ jobs:
         run: |
           summary="$(find CodeCoverage -name Summary.xml -print -quit)"
           test -n "$summary"
-          coverage="$(sed -n 's:.*<Linecoverage>\([0-9.]*\)%</Linecoverage>.*:\1:p' "$summary" | head -1)"
+          coverage="$(sed -n 's:.*<Linecoverage>\([0-9.]*\)</Linecoverage>.*:\1:p' "$summary" | head -1)"
           test -n "$coverage"
           awk -v coverage="$coverage" 'BEGIN { if (coverage + 0 < 80) exit 1 }'
 

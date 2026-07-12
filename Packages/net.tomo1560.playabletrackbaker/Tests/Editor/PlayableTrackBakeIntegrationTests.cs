@@ -1,8 +1,11 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
 using UnityEngine.Timeline;
 
 namespace PlayableTrackBaking.Tests
@@ -12,15 +15,20 @@ namespace PlayableTrackBaking.Tests
     public class PlayableTrackBakeIntegrationTests
     {
         const string TestFolder = "Assets/__PlayableTrackBakerTests";
-        const string TimelinePath = TestFolder + "/Source.playable";
 
         GameObject _target;
         GameObject _directorObject;
         string _generatedClipPath;
+        string _assetSuffix;
+        readonly List<string> _createdAssetPaths = new List<string>();
+        string TimelinePath => $"{TestFolder}/Source_{_assetSuffix}.playable";
+        string TempUserAssetPath => $"{PlayableTrackBakeSceneProcessor.TempFolder}/UserAsset_{_assetSuffix}.playable";
+        string TempGeneratedAssetPath => $"{PlayableTrackBakeSceneProcessor.TempFolder}/Generated_{_assetSuffix}.playable";
 
         [SetUp]
         public void SetUp()
         {
+            _assetSuffix = GUID.Generate().ToString();
             if (!AssetDatabase.IsValidFolder(TestFolder))
                 AssetDatabase.CreateFolder("Assets", "__PlayableTrackBakerTests");
             PlayableTrackBakeSceneProcessor.EnsureTempFolder();
@@ -35,8 +43,17 @@ namespace PlayableTrackBaking.Tests
                 Object.DestroyImmediate(_target);
             if (!string.IsNullOrEmpty(_generatedClipPath))
                 AssetDatabase.DeleteAsset(_generatedClipPath);
-            AssetDatabase.DeleteAsset(TestFolder);
-            AssetDatabase.DeleteAsset(PlayableTrackBakeSceneProcessor.TempFolder);
+            foreach (string path in _createdAssetPaths.Distinct())
+                AssetDatabase.DeleteAsset(path);
+            _createdAssetPaths.Clear();
+            // テスト自身が作成した既知のアセットだけを削除する。固定フォルダ全体を消すと、
+            // 利用者が同じ場所へ置いた無関係なアセットを巻き込むため削除してはならない。
+            AssetDatabase.DeleteAsset(TimelinePath);
+            AssetDatabase.DeleteAsset(TempUserAssetPath);
+            AssetDatabase.DeleteAsset(TempGeneratedAssetPath);
+            if (AssetDatabase.IsValidFolder(TestFolder) &&
+                AssetDatabase.FindAssets(string.Empty, new[] { TestFolder }).Length == 0)
+                AssetDatabase.DeleteAsset(TestFolder);
             AssetDatabase.Refresh();
         }
 
@@ -75,28 +92,146 @@ namespace PlayableTrackBaking.Tests
             Assert.IsFalse(playableTrack.muted, "元 Timeline の mute 状態を変更してはならない");
 
             string clonePath = AssetDatabase.GetAssetPath(clone);
+            _createdAssetPaths.Add(clonePath);
             StringAssert.StartsWith(PlayableTrackBakeSceneProcessor.TempFolder, clonePath);
             Assert.IsTrue(AssetDatabase.LoadAllAssetsAtPath(clonePath).OfType<AnimationClip>().Any(),
                 "ベイククリップはクローン Timeline のサブアセットであるべき");
         }
 
         [Test]
-        public void TempCleanup_DeletesOnlyToolOwnedAssets()
+        public void BakeNonDestructive_RejectsInvalidInputsWithoutCreatingAssets()
         {
-            string userPath = PlayableTrackBakeSceneProcessor.TempFolder + "/UserAsset.playable";
-            string generatedPath = PlayableTrackBakeSceneProcessor.TempFolder + "/Generated.playable";
+            Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(null,
+                new TimelineBakeMarker[0]));
+
+            _directorObject = new GameObject("InvalidDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(director,
+                new TimelineBakeMarker[0]), "playableAsset 未設定なら処理しないはず");
+
+            var noPlayableTimeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            director.playableAsset = noPlayableTimeline;
+            Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(director,
+                new TimelineBakeMarker[0]), "PlayableTrack がなければ処理しないはず");
+            Object.DestroyImmediate(noPlayableTimeline);
+        }
+
+        [Test]
+        public void SceneProcessor_EmptySceneDoesNotCreateTemporaryAssets()
+        {
+            var scene = SceneManager.GetActiveScene();
+            Assert.IsFalse(scene.GetRootGameObjects().Any(root =>
+                root.GetComponentInChildren<TimelineBakeMarker>(true) != null));
+
+            new PlayableTrackBakeSceneProcessor().OnProcessScene(scene, null);
+
+            Assert.AreEqual(0, AssetDatabase.FindAssets(
+                $"l:{PlayableTrackBakeTempCleanup.OwnershipLabel}",
+                new[] { PlayableTrackBakeSceneProcessor.TempFolder }).Length);
+        }
+
+        [Test]
+        public void BakeNonDestructive_RejectsUnsavedTimelineAndEmptyRoots()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            timeline.CreateTrack<PlayableTrack>().CreateClip<SineMoveTestPlayableAsset>().duration = 1;
+            _directorObject = new GameObject("UnsavedDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.director = director;
+            marker.recordRoots = new GameObject[0];
+
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("recordRoots"));
+            Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(director,
+                new[] { marker }));
+
+            marker.recordRoots = new[] { _directorObject };
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex("保存済みアセット"));
+            Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(director,
+                new[] { marker }));
+            Object.DestroyImmediate(timeline);
+        }
+
+        [Test]
+        public void RunBake_HandlesMissingDirectorsAndNonBakeableTimelines()
+        {
+            Assert.AreEqual(0, PlayableTrackBaker.RunBake(new TimelineBakeMarker[0]));
+
+            _directorObject = new GameObject("RunBakeDirector");
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.recordRoots = new[] { _directorObject };
+            Assert.AreEqual(0, PlayableTrackBaker.RunBake(new[] { marker }),
+                "Timeline 未設定のDirectorはベイク成功に数えないはず");
+
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            _directorObject.GetComponent<PlayableDirector>().playableAsset = timeline;
+            Assert.AreEqual(0, PlayableTrackBaker.RunBake(new[] { marker }),
+                "PlayableTrack のないTimelineはベイク成功に数えないはず");
+            Object.DestroyImmediate(timeline);
+        }
+
+        [Test]
+        public void RunBake_SuccessfullyPersistsClipAndBakedTrack()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            AssetDatabase.CreateAsset(timeline, TimelinePath);
+            timeline.CreateTrack<PlayableTrack>().CreateClip<SineMoveTestPlayableAsset>().duration = 1;
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = 0.1;
+
+            _target = new GameObject("RunBakeTarget");
+            _directorObject = new GameObject("RunBakeSuccessDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.director = director;
+            marker.recordRoots = new[] { _target };
+            marker.frameRate = 10;
+
+            PlayableTrackBakeCore.EnsureFolder();
+            _generatedClipPath = PlayableTrackBakeCore.BuildClipAssetPath(
+                director, timeline, _target, 0);
+            AssetDatabase.DeleteAsset(_generatedClipPath);
+
+            Assert.AreEqual(1, PlayableTrackBaker.RunBake(new[] { marker }));
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<AnimationClip>(_generatedClipPath));
+            Assert.IsTrue(timeline.GetOutputTracks().Any(
+                PlayableTrackBakeCore.IsBakedTrackOwnedByTool));
+        }
+
+        [Test]
+        public void TempCleanup_PostprocessEntryDeletesOwnedAssetOnly()
+        {
             var userAsset = ScriptableObject.CreateInstance<TimelineAsset>();
             var generatedAsset = ScriptableObject.CreateInstance<TimelineAsset>();
-            AssetDatabase.CreateAsset(userAsset, userPath);
-            AssetDatabase.CreateAsset(generatedAsset, generatedPath);
+            AssetDatabase.CreateAsset(userAsset, TempUserAssetPath);
+            AssetDatabase.CreateAsset(generatedAsset, TempGeneratedAssetPath);
+            AssetDatabase.SetLabels(generatedAsset,
+                new[] { PlayableTrackBakeTempCleanup.OwnershipLabel });
+            AssetDatabase.SaveAssets();
+
+            new PlayableTrackBakeTempCleanup().OnPostprocessBuild(null);
+
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(TempUserAssetPath));
+            Assert.IsNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(TempGeneratedAssetPath));
+        }
+
+        [Test]
+        public void TempCleanup_DeletesOnlyToolOwnedAssets()
+        {
+            var userAsset = ScriptableObject.CreateInstance<TimelineAsset>();
+            var generatedAsset = ScriptableObject.CreateInstance<TimelineAsset>();
+            AssetDatabase.CreateAsset(userAsset, TempUserAssetPath);
+            AssetDatabase.CreateAsset(generatedAsset, TempGeneratedAssetPath);
             AssetDatabase.SetLabels(generatedAsset, new[] { PlayableTrackBakeTempCleanup.OwnershipLabel });
             AssetDatabase.SaveAssets();
 
             PlayableTrackBakeTempCleanup.Cleanup();
 
-            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(userPath),
+            Assert.IsNotNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(TempUserAssetPath),
                 "固定一時フォルダ内のユーザー資産を削除してはならない");
-            Assert.IsNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(generatedPath),
+            Assert.IsNull(AssetDatabase.LoadAssetAtPath<TimelineAsset>(TempGeneratedAssetPath),
                 "所有ラベル付きのツール生成物は削除されるべき");
             Assert.IsTrue(AssetDatabase.IsValidFolder(PlayableTrackBakeSceneProcessor.TempFolder));
         }

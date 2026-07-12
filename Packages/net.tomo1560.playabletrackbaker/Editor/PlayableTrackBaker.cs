@@ -489,6 +489,15 @@ namespace PlayableTrackBaking
             // 既存の [Baked] トラックを削除（再ベイク時／クローン元由来の増殖防止）。
             // ユーザーが自分で "[Baked]..." と命名したトラックは所有証拠が無いため削除せずスキップする
             var existingTracks = timeline.GetOutputTracks().ToArray();
+            // DeleteTrack 後の TrackAsset は MissingReference になるため、警告判定は削除前に済ませる。
+            foreach (var t in existingTracks.Where(t =>
+                t.name.StartsWith(BakedTrackPrefix, System.StringComparison.Ordinal) &&
+                !IsBakedTrackOwnedByTool(t)))
+            {
+                Debug.LogWarning(
+                    $"[PlayableTrackBaker] トラック \"{t.name}\" は所有署名がないため削除しません。" +
+                    "旧バージョンの生成物であれば手動で削除してください。", timeline);
+            }
             foreach (var t in existingTracks.Where(IsBakedTrackOwnedByTool))
             {
                 if (registerUndo)
@@ -497,14 +506,6 @@ namespace PlayableTrackBaking
                     Undo.RegisterCompleteObjectUndo(t, "Replace Baked Track");
                 }
                 timeline.DeleteTrack(t);
-            }
-            foreach (var t in existingTracks.Where(t =>
-                t.name.StartsWith(BakedTrackPrefix, System.StringComparison.Ordinal) &&
-                !IsBakedTrackOwnedByTool(t)))
-            {
-                Debug.LogWarning(
-                    $"[PlayableTrackBaker] トラック \"{t.name}\" は所有署名がないため削除しません。" +
-                    "旧バージョンの生成物であれば手動で削除してください。", timeline);
             }
 
             foreach (var (clip, root) in recorded)

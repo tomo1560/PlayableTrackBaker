@@ -95,6 +95,8 @@ TestProject/Packages/com.vrchat.*/
 VerificationProject/ClientSimStorage/
 TestProject/ClientSimStorage/
 TestProject/PlayableTrackBaker-TestResults.xml
+TestProject/CodeCoverage/
+TestProject/coverage-test.log
 TestProject/ProjectSettings/*
 !TestProject/ProjectSettings/ProjectVersion.txt
 TestProject/Assets/*
