@@ -36,6 +36,10 @@ Unity に戻ってコンパイルが通れば準備完了です（エラーが�
 - `BakeTest_Director`（`PlayableDirector` + `TimelineBakeMarker`）
 - `Assets/PlayableTrackBakerTests/Generated/BakeTest_Timeline.playable`
 
+通常版と High Precision 版を両方クリーンな未ベイク状態へ戻す場合は、メニュー
+**Tools > Timeline > Regenerate All Bake Test Setups** を実行します。BakeTest用の古い生成 `.anim` だけを削除し、
+両方のTimelineとシーンオブジェクトを作り直してシーンを保存します。
+
 ### 4. ベイク前の動きを確認する
 
 1. `BakeTest_Director` を選択し、**Window > Sequencing > Timeline** を開きます。

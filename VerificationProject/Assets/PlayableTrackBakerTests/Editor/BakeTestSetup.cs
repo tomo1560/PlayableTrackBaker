@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -24,12 +25,27 @@ namespace PlayableTrackBaking.Tests
     {
         const string RootName = "BakeTest_Root";
         const string GeneratedFolder = "Assets/PlayableTrackBakerTests/Generated";
+        const string BakedFolder = "Assets/BakedTimelineClips";
+        const string VerificationScene = "Assets/Scenes/VRCDefaultWorldScene.unity";
 
         [MenuItem("Tools/Timeline/Create Bake Test Setup")]
         static void CreateSetup() => Build(false);
 
         [MenuItem("Tools/Timeline/Create Bake Test Setup (High Precision)")]
         static void CreateSetupHighPrecision() => Build(true);
+
+        [MenuItem("Tools/Timeline/Regenerate All Bake Test Setups")]
+        public static void RegenerateAll()
+        {
+            var scene = EditorSceneManager.OpenScene(VerificationScene, OpenSceneMode.Single);
+            DeleteGeneratedBakeClips();
+            Build(false);
+            Build(true);
+            EditorSceneManager.SaveScene(scene);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("[BakeTestSetup] 軽量版と High Precision 版をクリーン再生成しました。");
+        }
 
         static void Build(bool highPrecision)
         {
@@ -129,6 +145,20 @@ namespace PlayableTrackBaking.Tests
                 AssetDatabase.CreateFolder("Assets", "PlayableTrackBakerTests");
             if (!AssetDatabase.IsValidFolder(GeneratedFolder))
                 AssetDatabase.CreateFolder("Assets/PlayableTrackBakerTests", "Generated");
+        }
+
+        static void DeleteGeneratedBakeClips()
+        {
+            if (!AssetDatabase.IsValidFolder(BakedFolder))
+                return;
+
+            foreach (string absolutePath in Directory.GetFiles(BakedFolder, "BakeTest_Director*_baked.anim"))
+            {
+                string path = absolutePath.Replace('\\', '/');
+                string fileName = Path.GetFileName(path);
+                if (fileName.StartsWith("BakeTest_Director") && fileName.EndsWith("_baked.anim"))
+                    AssetDatabase.DeleteAsset(path);
+            }
         }
     }
 }

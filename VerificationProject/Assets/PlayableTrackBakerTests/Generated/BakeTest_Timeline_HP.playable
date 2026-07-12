@@ -1,22 +1,5 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-75264129563940613
-MonoBehaviour:
-  m_ObjectHideFlags: 1
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4818892766a2205499021822fee08a48, type: 3}
-  m_Name: MoveSamplePlayableAsset
-  m_EditorClassIdentifier: 
-  target:
-    exposedName: 7a01063b21fafbb459b66223b6e3c250
-    defaultValue: {fileID: 0}
-  amplitude: 1.5
-  frequency: 0.5
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -31,14 +14,14 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   m_Version: 0
   m_Tracks:
-  - {fileID: 934333753284996418}
+  - {fileID: 2280222218511632517}
   m_FixedDuration: 0
   m_EditorSettings:
     m_Framerate: 60
     m_ScenePreview: 1
   m_DurationMode: 0
   m_MarkerTrack: {fileID: 0}
---- !u!114 &934333753284996418
+--- !u!114 &2280222218511632517
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -62,10 +45,10 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 0
     m_ClipIn: 0
-    m_Asset: {fileID: -75264129563940613}
+    m_Asset: {fileID: 3007236265781965212}
     m_Duration: 4
     m_TimeScale: 1
-    m_ParentTrack: {fileID: 934333753284996418}
+    m_ParentTrack: {fileID: 2280222218511632517}
     m_EaseInDuration: 0
     m_EaseOutDuration: 0
     m_BlendInDuration: -1
@@ -130,3 +113,20 @@ MonoBehaviour:
     m_DisplayName: Move
   m_Markers:
     m_Objects: []
+--- !u!114 &3007236265781965212
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4818892766a2205499021822fee08a48, type: 3}
+  m_Name: MoveSamplePlayableAsset
+  m_EditorClassIdentifier: 
+  target:
+    exposedName: 0b6fd7338bd848c4699828983b6cc806
+    defaultValue: {fileID: 0}
+  amplitude: 1.5
+  frequency: 0.5
