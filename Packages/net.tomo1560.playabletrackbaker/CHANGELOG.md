@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- 手動ベイク失敗時に、既存 AnimationClip、Timeline、binding、追加 Animator、新規アセットを元の状態へ戻すよう修正
+- ツール生成クリップの専用署名で所有権を判定し、ユーザー作成の `[Baked]` トラックを削除しないよう修正
+- ビルド一時フォルダ内のユーザー資産を削除せず、所有ラベル付き生成物だけを掃除するよう修正
+- 非有限 Frame Rate と過大な総ベイク処理量を事前に拒否するよう修正
+- VPM listing のメタデータ埋め込み、外部 URL、依存スクリプトの扱いを強化
+
+### Changed
+
+- GitHub Actions の外部参照をコミット SHA に固定し、カバレッジ 80% ゲートと再試行可能なドラフト Release 手順を追加
+
 ## [1.0.0] - 2026-07-12
 
 ### Fixed

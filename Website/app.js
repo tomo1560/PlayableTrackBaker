@@ -1,30 +1,30 @@
-import { baseLayerLuminance, StandardLuminance } from 'https://unpkg.com/@fluentui/web-components@2.6.1';
+import { baseLayerLuminance, StandardLuminance } from './fluent-web-components.min.js';
 
-const LISTING_URL = "{{ listingInfo.Url }}";
+const LISTING_URL = "{{ listingInfo.Url | string.escape }}";
 
 const PACKAGES = {
 {{~ for package in packages ~}}
-  "{{ package.Name }}": {
-    name: "{{ package.Name }}",
-    displayName: "{{ if package.DisplayName; package.DisplayName; end; }}",
-    description: "{{ if package.Description; package.Description; end; }}",
-    version: "{{ package.Version }}",
+  "{{ package.Name | string.escape }}": {
+    name: "{{ package.Name | string.escape }}",
+    displayName: "{{ if package.DisplayName; package.DisplayName | string.escape; end; }}",
+    description: "{{ if package.Description; package.Description | string.escape; end; }}",
+    version: "{{ package.Version | string.escape }}",
     author: {
-      name: "{{ if package.Author.Name; package.Author.Name; end; }}",
-      url: "{{ if package.Author.Url; package.Author.Url; end; }}",
+      name: "{{ if package.Author.Name; package.Author.Name | string.escape; end; }}",
+      url: "{{ if package.Author.Url; package.Author.Url | string.escape; end; }}",
     },
     dependencies: {
       {{~ for dependency in package.Dependencies ~}}
-        "{{ dependency.Name }}": "{{ dependency.Version }}",
+        "{{ dependency.Name | string.escape }}": "{{ dependency.Version | string.escape }}",
       {{~ end ~}}
     },
     keywords: [
       {{~ for keyword in package.Keywords ~}}
-        "{{ keyword }}",
+        "{{ keyword | string.escape }}",
       {{~ end ~}}
     ],
-    license: "{{ package.License }}",
-    licensesUrl: "{{ package.LicensesUrl }}",
+    license: "{{ package.License | string.escape }}",
+    licensesUrl: "{{ package.LicenseUrl | string.escape }}",
   },
 {{~ end ~}}
 };
@@ -38,8 +38,29 @@ const setTheme = () => {
   }
 }
 
+const safeHttpUrl = value => {
+  try {
+    const url = new URL(value, window.location.href);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : null;
+  } catch {
+    return null;
+  }
+};
+
+const safeListingUrl = safeHttpUrl(LISTING_URL);
+
 (() => {
   setTheme();
+
+  document.querySelectorAll('[data-safe-href]').forEach(link => {
+    const safeUrl = safeHttpUrl(link.dataset.safeHref);
+    if (safeUrl) link.href = safeUrl;
+    else link.removeAttribute('href');
+  });
+  document.querySelectorAll('[data-safe-background-url]').forEach(element => {
+    const safeUrl = safeHttpUrl(element.dataset.safeBackgroundUrl);
+    if (safeUrl) element.style.backgroundImage = `url(${JSON.stringify(safeUrl)})`;
+  });
 
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     setTheme();
@@ -88,7 +109,10 @@ const setTheme = () => {
   });
 
   const vccAddRepoButton = document.getElementById('vccAddRepoButton');
-  vccAddRepoButton.addEventListener('click', () => window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`));
+  vccAddRepoButton.disabled = !safeListingUrl;
+  vccAddRepoButton.addEventListener('click', () => {
+    if (safeListingUrl) window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(safeListingUrl)}`);
+  });
 
   const vccUrlFieldCopy = document.getElementById('vccUrlFieldCopy');
   vccUrlFieldCopy.addEventListener('click', () => {
@@ -102,6 +126,12 @@ const setTheme = () => {
   });
 
   const rowMoreMenu = document.getElementById('rowMoreMenu');
+  const rowMoreMenuDownload = rowMoreMenu.querySelector('#rowMoreMenuDownload');
+  let selectedPackageUrl = null;
+  rowMoreMenuDownload.addEventListener('change', () => {
+    const packageUrl = safeHttpUrl(selectedPackageUrl);
+    if (packageUrl) window.open(packageUrl, '_blank', 'noopener,noreferrer');
+  });
   const hideRowMoreMenu = e => {
     if (rowMoreMenu.contains(e.target)) return;
     document.removeEventListener('click', hideRowMoreMenu);
@@ -111,19 +141,12 @@ const setTheme = () => {
   const rowMenuButtons = document.querySelectorAll('.rowMenuButton');
   rowMenuButtons.forEach(button => {
     button.addEventListener('click', e => {
+      const sourceButton = e.currentTarget;
       if (rowMoreMenu?.hidden) {
-        rowMoreMenu.style.top = `${e.clientY + e.target.clientHeight}px`;
+        rowMoreMenu.style.top = `${e.clientY + sourceButton.clientHeight}px`;
         rowMoreMenu.style.left = `${e.clientX - 120}px`;
         rowMoreMenu.hidden = false;
-
-        const downloadLink = rowMoreMenu.querySelector('#rowMoreMenuDownload');
-        const downloadListener = () => {
-          window.open(e?.target?.dataset?.packageUrl, '_blank');
-        }
-        downloadLink.addEventListener('change', () => {
-          downloadListener();
-          downloadLink.removeEventListener('change', downloadListener);
-        });
+        selectedPackageUrl = sourceButton.dataset?.packageUrl ?? null;
 
         setTimeout(() => {
           document.addEventListener('click', hideRowMoreMenu);
@@ -155,13 +178,16 @@ const setTheme = () => {
 
   const rowAddToVccButtons = document.querySelectorAll('.rowAddToVccButton');
   rowAddToVccButtons.forEach((button) => {
-    button.addEventListener('click', () => window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(LISTING_URL)}`));
+    button.disabled = !safeListingUrl;
+    button.addEventListener('click', () => {
+      if (safeListingUrl) window.location.assign(`vcc://vpm/addRepo?url=${encodeURIComponent(safeListingUrl)}`);
+    });
   });
 
   const rowPackageInfoButton = document.querySelectorAll('.rowPackageInfoButton');
   rowPackageInfoButton.forEach((button) => {
     button.addEventListener('click', e => {
-      const packageId = e.target.dataset?.packageId;
+      const packageId = e.currentTarget.dataset?.packageId;
       const packageInfo = PACKAGES?.[packageId];
       if (!packageInfo) {
         console.error(`Did not find package ${packageId}. Packages available:`, PACKAGES);
@@ -173,7 +199,7 @@ const setTheme = () => {
       packageInfoVersion.textContent = `v${packageInfo.version}`;
       packageInfoDescription.textContent = packageInfo.description;
       packageInfoAuthor.textContent = packageInfo.author.name;
-      packageInfoAuthor.href = packageInfo.author.url;
+      packageInfoAuthor.href = safeHttpUrl(packageInfo.author.url) ?? '#';
 
       if ((packageInfo.keywords?.length ?? 0) === 0) {
         packageInfoKeywords.parentElement.classList.add('hidden');
@@ -193,7 +219,7 @@ const setTheme = () => {
       } else {
         packageInfoLicense.parentElement.classList.remove('hidden');
         packageInfoLicense.textContent = packageInfo.license ?? 'See License';
-        packageInfoLicense.href = packageInfo.licensesUrl ?? '#';
+        packageInfoLicense.href = safeHttpUrl(packageInfo.licensesUrl) ?? '#';
       }
 
       packageInfoDependencies.innerHTML = null;

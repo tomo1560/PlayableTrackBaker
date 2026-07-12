@@ -332,6 +332,40 @@ namespace PlayableTrackBaking.Tests
             Assert.AreEqual(1, bakedCount, "再ベイクで [Baked] トラックが増殖しないはず");
         }
 
+        [Test]
+        public void AddBakedTracks_DeletesOwnedTrackEvenAfterRename()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+            var clip = new AnimationClip();
+            _cleanup.Add(clip);
+            var recorded = new List<(AnimationClip clip, GameObject root)> { (clip, rig.targetGo) };
+
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+            var generated = rig.timeline.GetOutputTracks()
+                .Single(PlayableTrackBakeCore.IsBakedTrackOwnedByTool);
+            generated.name = "Renamed by user";
+
+            PlayableTrackBakeCore.AddBakedTracks(rig.director, rig.timeline, recorded, true);
+
+            Assert.AreEqual(1, rig.timeline.GetOutputTracks()
+                .Count(PlayableTrackBakeCore.IsBakedTrackOwnedByTool));
+        }
+
+        [Test]
+        public void IsBakedTrackOwnedByTool_DoesNotTrustDisplayNameOrClipPath()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+            var userTrack = rig.timeline.CreateTrack<AnimationTrack>(
+                null, $"{PlayableTrackBakeCore.BakedTrackPrefix} UserTrack");
+            var userClip = new AnimationClip { name = $"{PlayableTrackBakeCore.BakedTrackPrefix} UserClip" };
+            _cleanup.Add(userClip);
+            var timelineClip = userTrack.CreateClip(userClip);
+            timelineClip.displayName = $"{PlayableTrackBakeCore.BakedTrackPrefix} UserClip";
+
+            Assert.IsFalse(PlayableTrackBakeCore.IsBakedTrackOwnedByTool(userTrack),
+                "ユーザーが再現できる表示名は所有権の証拠にしてはならない");
+        }
+
         // ---- Record（frameRate クランプと総サンプル数の上限）---------------------------
 
         [Test]
@@ -362,6 +396,38 @@ namespace PlayableTrackBaking.Tests
             StringAssert.Contains("上限", ex.Message);
             Assert.IsTrue(rig.track.muted,
                 "上限超過は Timeline に触れる前に失敗し、mute 状態へ影響しないはず");
+        }
+
+        [TestCase(float.NaN)]
+        [TestCase(float.PositiveInfinity)]
+        [TestCase(float.NegativeInfinity)]
+        public void Record_RejectsNonFiniteFrameRate(float frameRate)
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f);
+            rig.marker.frameRate = frameRate;
+
+            var ex = Assert.Throws<System.InvalidOperationException>(
+                () => PlayableTrackBakeCore.Record(rig.director, rig.timeline, rig.marker));
+            StringAssert.Contains("有限値", ex.Message);
+        }
+
+        [Test]
+        public void ValidateWorkload_AggregatesMarkersRootsAndHierarchy()
+        {
+            var rig = BuildRig(highPrecision: true, reduction: 0f, frequency: 0.5f, duration: 1000.0);
+            rig.marker.frameRate = TimelineBakeMarker.MaxFrameRate;
+            rig.marker.recordAllProperties = true;
+            for (int i = 0; i < 5; i++)
+                new GameObject($"Child{i}").transform.SetParent(rig.marker.recordRoots[0].transform);
+
+            var second = rig.director.gameObject.AddComponent<TimelineBakeMarker>();
+            second.frameRate = TimelineBakeMarker.MaxFrameRate;
+            second.recordRoots = rig.marker.recordRoots;
+            second.recordAllProperties = true;
+
+            var ex = Assert.Throws<System.InvalidOperationException>(() =>
+                PlayableTrackBakeCore.ValidateWorkload(rig.timeline, new[] { rig.marker, second }));
+            StringAssert.Contains("推定処理量", ex.Message);
         }
 
         // ---- Record（ミュート解除）-----------------------------------------------------

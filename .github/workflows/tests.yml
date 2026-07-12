@@ -19,11 +19,23 @@ permissions:
   checks: write
 
 jobs:
-  editmode-tests:
+  repository-validation:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Validate package manifest
+        run: |
+          jq -e '.name == "net.tomo1560.playabletrackbaker"' Packages/net.tomo1560.playabletrackbaker/package.json
+          jq -e '.version | test("^[0-9]+\\.[0-9]+\\.[0-9]+([+-][0-9A-Za-z.-]+)?$")' Packages/net.tomo1560.playabletrackbaker/package.json
+
+  editmode-tests:
+    needs: repository-validation
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Restore VRChat VPM dependencies
         uses: anatawa12/sh-actions/resolve-vpm-packages@1d155c7a26bcd0a54ffd9cb38fd66ab0d32d23cd # master (2026-07-12)
@@ -31,7 +43,7 @@ jobs:
           project-path: TestProject
 
       - name: Restore Unity Library cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: TestProject/Library
           key: Library-${{ runner.os }}-2022.3.22f1-${{ hashFiles('TestProject/Packages/**', 'Packages/net.tomo1560.playabletrackbaker/**') }}
@@ -39,7 +51,7 @@ jobs:
             Library-${{ runner.os }}-2022.3.22f1-
 
       - name: Run EditMode tests
-        uses: game-ci/unity-test-runner@v4
+        uses: game-ci/unity-test-runner@0ff419b913a3630032cbe0de48a0099b5a9f0ed9 # v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
@@ -50,13 +62,31 @@ jobs:
           testMode: EditMode
           testFilter: PlayableTrackBaking.Tests
           artifactsPath: TestResults
+          coverageOptions: generateAdditionalMetrics;generateHtmlReport;generateBadgeReport;assemblyFilters:+net.tomo1560.playabletrackbaker.Runtime,+net.tomo1560.playabletrackbaker.Editor,-net.tomo1560.playabletrackbaker.EditorTests
+          coveragePath: CodeCoverage
           githubToken: ${{ secrets.GITHUB_TOKEN }}
           checkName: Unity EditMode Test Results
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: unity-editmode-test-results
           path: TestResults
           if-no-files-found: warn
+
+      - name: Enforce 80% line coverage
+        run: |
+          summary="$(find CodeCoverage -name Summary.xml -print -quit)"
+          test -n "$summary"
+          coverage="$(sed -n 's:.*<Linecoverage>\([0-9.]*\)%</Linecoverage>.*:\1:p' "$summary" | head -1)"
+          test -n "$coverage"
+          awk -v coverage="$coverage" 'BEGIN { if (coverage + 0 < 80) exit 1 }'
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: unity-editmode-coverage
+          path: CodeCoverage
+          if-no-files-found: error

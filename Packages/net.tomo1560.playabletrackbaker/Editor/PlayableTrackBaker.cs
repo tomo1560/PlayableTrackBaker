@@ -24,12 +24,14 @@ namespace PlayableTrackBaking
     {
         public const string OutputFolder = "Assets/BakedTimelineClips";
         public const string BakedTrackPrefix = "[Baked]";
+        internal const string OwnershipSignature = "PlayableTrackBaker.GeneratedClip.v1:";
 
         /// <summary>
         /// 1 回の Record で許容する総サンプル数の上限。
         /// 異常な frameRate × 長尺 Timeline の組み合わせでエディタがフリーズ／メモリ枯渇するのを防ぐ。
         /// </summary>
         internal const int MaxTotalFrames = 1_000_000;
+        internal const long MaxWorkUnits = 10_000_000;
 
         public static bool HasPlayableTrack(TimelineAsset timeline)
             => timeline.GetOutputTracks().Any(t => t is PlayableTrack);
@@ -45,16 +47,11 @@ namespace PlayableTrackBaking
         public static List<(AnimationClip clip, GameObject root)> Record(
             PlayableDirector director, TimelineAsset timeline, TimelineBakeMarker marker)
         {
-            // Inspector には Range 属性があるが、古いシーンに保存済みの異常値対策として同じ範囲へクランプする
+            ValidateWorkload(timeline, new[] { marker });
+            // Inspector には Range 属性があるが、古いシーンに保存済みの有限な異常値対策として同じ範囲へクランプする
             float fps = Mathf.Clamp(marker.frameRate, TimelineBakeMarker.MinFrameRate, TimelineBakeMarker.MaxFrameRate);
             double duration = timeline.duration;
             int frames = Mathf.CeilToInt((float)duration * fps);
-
-            // 総サンプル数の上限チェックは Timeline に触れる前（unmute より前）に行い、黙ってクランプせず明確に失敗させる
-            if (frames > MaxTotalFrames)
-                throw new System.InvalidOperationException(
-                    $"[PlayableTrackBaker] {marker.name}: 総サンプル数 {frames} が上限 {MaxTotalFrames} を超えています。" +
-                    "Frame Rate を下げるか Timeline を短くしてください。");
 
             var muteSnapshot = timeline.GetOutputTracks().OfType<PlayableTrack>()
                 .Select(track => (track, track.muted)).ToList();
@@ -83,6 +80,44 @@ namespace PlayableTrackBaking
                     catch { /* 元の例外を優先する */ }
                 }
                 throw;
+            }
+        }
+
+        internal static void ValidateWorkload(TimelineAsset timeline, IEnumerable<TimelineBakeMarker> markers)
+        {
+            if (timeline == null || double.IsNaN(timeline.duration) || double.IsInfinity(timeline.duration) || timeline.duration < 0)
+                throw new System.InvalidOperationException("[PlayableTrackBaker] Timeline の長さが有限の非負値ではありません。");
+
+            long total = 0;
+            foreach (var marker in markers.Where(x => x != null))
+            {
+                if (float.IsNaN(marker.frameRate) || float.IsInfinity(marker.frameRate))
+                    throw new System.InvalidOperationException($"[PlayableTrackBaker] {marker.name}: Frame Rate は有限値である必要があります。");
+                float fps = Mathf.Clamp(marker.frameRate, TimelineBakeMarker.MinFrameRate, TimelineBakeMarker.MaxFrameRate);
+                double rawFrames = System.Math.Ceiling(timeline.duration * fps);
+                if (rawFrames > MaxTotalFrames)
+                    throw new System.InvalidOperationException($"[PlayableTrackBaker] {marker.name}: 総フレーム数が上限 {MaxTotalFrames} を超えています。");
+
+                long rootWeight = 0;
+                foreach (var root in marker.recordRoots ?? System.Array.Empty<GameObject>())
+                {
+                    if (root == null) continue;
+                    int transforms = root.GetComponentsInChildren<Transform>(true).Length;
+                    long weight = System.Math.Max(1, transforms);
+                    if (marker.recordAllProperties)
+                    {
+                        // BindAll の正確なカーブ数は記録後まで分からないため、Component と BlendShape 数を
+                        // 境界前の保守的な代理値として加える。
+                        weight += root.GetComponentsInChildren<Component>(true).Length * 4L;
+                        weight += root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
+                            .Sum(renderer => renderer.sharedMesh != null ? (long)renderer.sharedMesh.blendShapeCount : 0L);
+                    }
+                    rootWeight += weight;
+                }
+                try { total = checked(total + checked(((long)rawFrames + 1L) * rootWeight)); }
+                catch (System.OverflowException) { total = long.MaxValue; }
+                if (total > MaxWorkUnits)
+                    throw new System.InvalidOperationException($"[PlayableTrackBaker] 推定処理量 {total} が上限 {MaxWorkUnits} を超えています。マーカー、記録ルート、階層、FPS または Timeline 長を減らしてください。");
             }
         }
 
@@ -428,28 +463,18 @@ namespace PlayableTrackBaking
         }
 
         /// <summary>
-        /// トラックが本ツールの生成物である証拠（Timeline アセットに直列化される痕跡）を持つか。
-        ///  - クリップの displayName に BakedTrackPrefix を埋めている（AddBakedTracks が付与）
-        ///  - クリップが参照する AnimationClip がベイク出力フォルダ配下のアセット（旧バージョンの生成物との互換用）
-        /// 名前の prefix 一致だけではユーザーが偶然 "[Baked]..." と命名したトラックを誤削除するため、
-        /// 削除可否は「prefix 一致 かつ この証拠あり」で判定する。
+        /// VRChat 上でも再生できる組み込み AnimationTrack を保ったまま、参照クリップへ
+        /// 付与した専用署名で本ツールの生成物を判定する。表示名や保存先だけでは判定しない。
+        /// 旧版トラックは誤削除を避けるため自動移行しない。
         /// </summary>
         internal static bool IsBakedTrackOwnedByTool(TrackAsset track)
         {
             if (!(track is AnimationTrack))
                 return false;
-            foreach (var clip in track.GetClips())
-            {
-                if (clip.displayName != null && clip.displayName.StartsWith(BakedTrackPrefix))
-                    return true;
-                if (clip.asset is AnimationPlayableAsset animAsset && animAsset.clip != null)
-                {
-                    string path = AssetDatabase.GetAssetPath(animAsset.clip);
-                    if (!string.IsNullOrEmpty(path) && path.StartsWith(OutputFolder + "/"))
-                        return true;
-                }
-            }
-            return false;
+            return track.GetClips().Any(clip =>
+                clip.asset is AnimationPlayableAsset animationAsset &&
+                animationAsset.clip != null &&
+                animationAsset.clip.name.StartsWith(OwnershipSignature, System.StringComparison.Ordinal));
         }
 
         /// <summary>
@@ -458,22 +483,28 @@ namespace PlayableTrackBaking
         /// </summary>
         public static void AddBakedTracks(
             PlayableDirector director, TimelineAsset timeline,
-            List<(AnimationClip clip, GameObject root)> recorded, bool mutePlayableTracks)
+            List<(AnimationClip clip, GameObject root)> recorded, bool mutePlayableTracks,
+            bool registerUndo = false)
         {
             // 既存の [Baked] トラックを削除（再ベイク時／クローン元由来の増殖防止）。
             // ユーザーが自分で "[Baked]..." と命名したトラックは所有証拠が無いため削除せずスキップする
-            foreach (var t in timeline.GetOutputTracks().Where(t => t.name.StartsWith(BakedTrackPrefix)).ToArray())
+            var existingTracks = timeline.GetOutputTracks().ToArray();
+            foreach (var t in existingTracks.Where(IsBakedTrackOwnedByTool))
             {
-                if (IsBakedTrackOwnedByTool(t))
+                if (registerUndo)
                 {
-                    timeline.DeleteTrack(t);
+                    Undo.RegisterCompleteObjectUndo(timeline, "Replace Baked Track");
+                    Undo.RegisterCompleteObjectUndo(t, "Replace Baked Track");
                 }
-                else
-                {
-                    Debug.LogWarning(
-                        $"[PlayableTrackBaker] トラック \"{t.name}\" は名前が {BakedTrackPrefix} で始まりますが、" +
-                        "本ツールが生成した痕跡が無いため削除しません。ベイク生成物と紛らわしいので改名を推奨します。", timeline);
-                }
+                timeline.DeleteTrack(t);
+            }
+            foreach (var t in existingTracks.Where(t =>
+                t.name.StartsWith(BakedTrackPrefix, System.StringComparison.Ordinal) &&
+                !IsBakedTrackOwnedByTool(t)))
+            {
+                Debug.LogWarning(
+                    $"[PlayableTrackBaker] トラック \"{t.name}\" は所有署名がないため削除しません。" +
+                    "旧バージョンの生成物であれば手動で削除してください。", timeline);
             }
 
             foreach (var (clip, root) in recorded)
@@ -481,9 +512,14 @@ namespace PlayableTrackBaking
                 // ルートに Animator が無ければ追加（AnimationTrack の駆動に必要）
                 var animator = root.GetComponent<Animator>();
                 if (animator == null)
-                    animator = root.AddComponent<Animator>();
+                    animator = registerUndo
+                        ? Undo.AddComponent<Animator>(root)
+                        : root.AddComponent<Animator>();
 
+                clip.name = OwnershipSignature + root.name;
                 var track = timeline.CreateTrack<AnimationTrack>(null, $"{BakedTrackPrefix} {root.name}");
+                if (registerUndo)
+                    Undo.RegisterCreatedObjectUndo(track, "Create Baked Track");
                 track.trackOffset = TrackOffset.ApplySceneOffsets;
                 var tlClip = track.CreateClip(clip);
                 // 再ベイク時に「本ツールの生成物」と識別するための直列化される目印（IsBakedTrackOwnedByTool が参照）
@@ -544,6 +580,8 @@ namespace PlayableTrackBaking
     /// </summary>
     public static class PlayableTrackBaker
     {
+        // EditMode テストが、永続化と Timeline 更新の間の例外を再現するためのフック。
+        internal static System.Action BakeDestructiveFailureInjection;
         // ---- 実行の入口（対象の絞り込み方が違うだけで、実処理は BakeDestructive 共通）----
 
         [MenuItem("Tools/Timeline/Bake All PlayableTracks")]
@@ -626,6 +664,8 @@ namespace PlayableTrackBaking
             if (validMarkers.Count == 0)
                 return false;
 
+            PlayableTrackBakeCore.ValidateWorkload(timeline, validMarkers);
+
             PlayableTrackBakeCore.EnsureFolder();
 
             // Record は PlayableTrack を unmute する副作用があるので muted 状態を退避（破壊的ベイクではアセットにそのまま保存されてしまうため）
@@ -634,6 +674,12 @@ namespace PlayableTrackBaking
 
             bool mutePlayableTracks = validMarkers.All(marker => marker.mutePlayableTracksAfterBake);
             var createdAssetPaths = new List<string>(); // 例外時ロールバック用（このベイクで新規作成した .anim のみ追跡）
+            var overwrittenAssets = new List<(AnimationClip asset, AnimationClip snapshot)>();
+            Undo.IncrementCurrentGroup();
+            int undoGroup = Undo.GetCurrentGroup();
+            Undo.SetCurrentGroupName("Bake Playable Tracks");
+            Undo.RegisterCompleteObjectUndo(timeline, "Bake Playable Tracks");
+            Undo.RegisterCompleteObjectUndo(director, "Bake Playable Tracks");
             bool succeeded = false;
             try
             {
@@ -650,29 +696,40 @@ namespace PlayableTrackBaking
                     var existing = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
                     if (existing != null)
                     {
+                        overwrittenAssets.Add((existing, Object.Instantiate(existing)));
+                        Undo.RegisterCompleteObjectUndo(existing, "Bake Animation Clip");
                         EditorUtility.CopySerialized(clip, existing);
                         recorded[i] = (existing, root);
                     }
                     else
                     {
                         AssetDatabase.CreateAsset(clip, path);
+                        Undo.RegisterCreatedObjectUndo(clip, "Create Baked Animation Clip");
                         createdAssetPaths.Add(path);
                     }
                 }
 
-                PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks);
+                PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks, true);
+                BakeDestructiveFailureInjection?.Invoke();
                 succeeded = true;
             }
             catch
             {
-                // 中途半端な .anim をディスクに残さない。ただし既存アセットを上書き更新した分は
-                // 削除すると過去のベイクへの参照まで壊れるため、新規作成した分だけ消す
+                Undo.RevertAllDownToGroup(undoGroup);
+                foreach (var (asset, snapshot) in overwrittenAssets)
+                {
+                    if (asset != null && snapshot != null)
+                        EditorUtility.CopySerialized(snapshot, asset);
+                }
                 foreach (var path in createdAssetPaths)
                     AssetDatabase.DeleteAsset(path);
                 throw;
             }
             finally
             {
+                foreach (var (_, snapshot) in overwrittenAssets)
+                    if (snapshot != null)
+                        Object.DestroyImmediate(snapshot);
                 // 失敗時は必ず元の muted 状態へ戻す（Record / AddBakedTracks の途中で例外が出ても失われないように）。
                 // 成功時は全ミュートしない設定のときだけ、ユーザーが意図的にミュートしていたトラックを元へ戻す
                 if (!succeeded || !mutePlayableTracks)
@@ -682,6 +739,8 @@ namespace PlayableTrackBaking
                             track.muted = muted;
                 }
             }
+
+            Undo.CollapseUndoOperations(undoGroup);
 
             EditorUtility.SetDirty(timeline);
             EditorUtility.SetDirty(director);
@@ -784,6 +843,8 @@ namespace PlayableTrackBaking
             if (validMarkers.Count == 0)
                 return false;
 
+            PlayableTrackBakeCore.ValidateWorkload(src, validMarkers);
+
             string srcPath = AssetDatabase.GetAssetPath(src);
             if (string.IsNullOrEmpty(srcPath))
             {
@@ -804,6 +865,8 @@ namespace PlayableTrackBaking
                 AssetDatabase.DeleteAsset(clonePath);
                 return false;
             }
+            AssetDatabase.SetLabels(clone, AssetDatabase.GetLabels(clone)
+                .Concat(new[] { PlayableTrackBakeTempCleanup.OwnershipLabel }).Distinct().ToArray());
 
             director.playableAsset = clone;
             try
@@ -846,6 +909,7 @@ namespace PlayableTrackBaking
     /// </summary>
     public class PlayableTrackBakeTempCleanup : IPostprocessBuildWithReport
     {
+        internal const string OwnershipLabel = "PlayableTrackBaker.GeneratedTemp";
         public int callbackOrder => 10000;
 
         public void OnPostprocessBuild(BuildReport report) => Cleanup();
@@ -853,11 +917,17 @@ namespace PlayableTrackBaking
         [InitializeOnLoadMethod]
         static void SweepLeftoverOnLoad() => Cleanup();
 
-        static void Cleanup()
+        internal static void Cleanup()
         {
             if (AssetDatabase.IsValidFolder(PlayableTrackBakeSceneProcessor.TempFolder))
             {
-                AssetDatabase.DeleteAsset(PlayableTrackBakeSceneProcessor.TempFolder);
+                // 固定フォルダ自体はユーザーも利用できるため、所有ラベル付き生成物だけを削除する。
+                foreach (string guid in AssetDatabase.FindAssets($"l:{OwnershipLabel}", new[] { PlayableTrackBakeSceneProcessor.TempFolder }))
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    if (!string.IsNullOrEmpty(path) && path.StartsWith(PlayableTrackBakeSceneProcessor.TempFolder + "/"))
+                        AssetDatabase.DeleteAsset(path);
+                }
                 AssetDatabase.Refresh();
             }
         }
