@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UdonSharp;
+using UdonSharp.Compiler;
 using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.Events;
@@ -15,6 +16,7 @@ using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
 using PlayableTrackBaking;
 using VRC.SDK3.Components;
+using VRC.Udon;
 
 namespace GAIALyricsMovie.Editor
 {
@@ -31,7 +33,12 @@ namespace GAIALyricsMovie.Editor
         const string FontPath = SampleRoot + "/Fonts/NotoSansJP-VF.ttf";
         const string SignalReceiverScriptPath = SampleRoot + "/Signals/GAIASignalEventReceiver.cs";
         const string SignalReceiverProgramPath = SampleRoot + "/Signals/GAIASignalEventReceiver.asset";
+        const string ShowControllerScriptPath = SampleRoot + "/Udon/GAIAShowController.cs";
+        const string ShowControllerProgramPath = SampleRoot + "/Udon/GAIAShowController.asset";
+        const string PlayButtonInteractText = "Start GAIA Show";
         const double SongDuration = 221.504d;
+        const double ChorusSignalTime = 56.52d;
+        const double FinaleSignalTime = 153.24d;
         const string OwnedBakeLabel = "GAIALyricsMovie.OwnedBake.v1";
 
         static readonly Color DeepNavy = new Color(0.008f, 0.012f, 0.04f, 1f);
@@ -81,6 +88,7 @@ namespace GAIALyricsMovie.Editor
             Material violetMaterial = CreateStandardMaterial("GAIA_Violet", new Color(0.025f, 0.01f, 0.12f), Violet, 1.35f);
             Material starMaterial = CreateParticleMaterial();
             Mesh torusMesh = CreateTorusMesh();
+            EnsureShowControllerProgramAsset();
             ValidateSignalReceiverProgramAsset();
 
             GameObject worldRoot = new GameObject("GAIA Lyrics Movie World");
@@ -99,7 +107,15 @@ namespace GAIALyricsMovie.Editor
                 cues,
                 lyricsRoot,
                 visualsRoot,
-                signalEffects);
+                signalEffects,
+                out GAIASignalEventReceiver signalEventReceiver);
+            CreatePlayButton(
+                worldRoot.transform,
+                floorMaterial,
+                cyanMaterial,
+                japaneseFont,
+                directorObject.GetComponent<PlayableDirector>(),
+                signalEventReceiver);
 
             EditorSceneManager.MarkSceneDirty(scene);
             if (!EditorSceneManager.SaveScene(scene, ScenePath))
@@ -178,16 +194,52 @@ namespace GAIALyricsMovie.Editor
             if (program.sourceCsScript != receiverScript)
                 throw new InvalidOperationException(
                     $"固定パスのUdonSharp program assetはGAIA受信スクリプト所有ではありません: {SignalReceiverProgramPath}");
-            if (program.CompiledVersion != UdonSharpProgramVersion.CurrentVersion ||
-                program.SerializedProgramAsset == null ||
-                UdonSharpProgramAsset.GetProgramAssetForClass(typeof(GAIASignalEventReceiver)) != program)
+            if (!IsProgramAssetCompiled(program, typeof(GAIASignalEventReceiver)))
                 throw new InvalidOperationException(
                     "GAIASignalEventReceiverが未コンパイルです。UdonSharpのコンパイル完了後に再実行してください。");
         }
 
+        /// <summary>
+        /// 再生ボタン用UdonSharp program assetを冪等に生成する。バッチ実行では自動コンパイルの
+        /// タイミングが保証されないため、未コンパイルなら同期コンパイルしてから検証する。
+        /// </summary>
+        static void EnsureShowControllerProgramAsset()
+        {
+            MonoScript controllerScript = RequireAsset<MonoScript>(ShowControllerScriptPath);
+            var program = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ShowControllerProgramPath);
+            if (program == null)
+            {
+                program = ScriptableObject.CreateInstance<UdonSharpProgramAsset>();
+                program.sourceCsScript = controllerScript;
+                AssetDatabase.CreateAsset(program, ShowControllerProgramPath);
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
+                program = AssetDatabase.LoadAssetAtPath<UdonSharpProgramAsset>(ShowControllerProgramPath);
+                if (program == null)
+                    throw new InvalidOperationException(
+                        $"生成したUdonSharp program assetを再読込できませんでした: {ShowControllerProgramPath}");
+            }
+
+            if (program.sourceCsScript != controllerScript)
+                throw new InvalidOperationException(
+                    $"固定パスのUdonSharp program assetはGAIA再生ボタンスクリプト所有ではありません: {ShowControllerProgramPath}");
+            if (!IsProgramAssetCompiled(program, typeof(GAIAShowController)))
+                UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions { IsEditorBuild = true });
+            if (!IsProgramAssetCompiled(program, typeof(GAIAShowController)))
+                throw new InvalidOperationException(
+                    "GAIAShowControllerが未コンパイルです。UdonSharpのコンパイル完了後に再実行してください。");
+        }
+
+        static bool IsProgramAssetCompiled(UdonSharpProgramAsset program, Type behaviourType)
+        {
+            return program.CompiledVersion == UdonSharpProgramVersion.CurrentVersion &&
+                   program.SerializedProgramAsset != null &&
+                   UdonSharpProgramAsset.GetProgramAssetForClass(behaviourType) == program;
+        }
+
         static void ValidateSourceAssets()
         {
-            var missing = new[] { AudioPath, LyricsPath, FontPath, SignalReceiverScriptPath }
+            var missing = new[] { AudioPath, LyricsPath, FontPath, SignalReceiverScriptPath, ShowControllerScriptPath }
                 .Where(path => !File.Exists(ToAbsoluteAssetPath(path)))
                 .ToArray();
             if (missing.Length > 0)
@@ -383,7 +435,7 @@ namespace GAIALyricsMovie.Editor
             CreateStaticText("GAIA Title", "G A I A", new Vector3(0f, 8.2f, 9.5f), 0.15f, Cyan, font, parent);
             CreateStaticText("GAIA Subtitle", "LYRICS MOVIE  /  PLAYABLE TRACK BAKER", new Vector3(0f, 7.55f, 9.5f), 0.035f,
                 new Color(0.62f, 0.72f, 1f), font, parent);
-            CreateStaticText("GAIA Credit", "Music: 魔王魂  •  Compose: 森田交一  •  Lyrics: 火ノ岡レイ  •  Vocal: KEI\nhttps://maou.audio/47_gaia/  •  Local auto-play sample", new Vector3(0f, 0.55f, 7.5f), 0.025f,
+            CreateStaticText("GAIA Credit", "Music: 魔王魂  •  Compose: 森田交一  •  Lyrics: 火ノ岡レイ  •  Vocal: KEI\nhttps://maou.audio/47_gaia/  •  Synced play button sample", new Vector3(0f, 0.55f, 7.5f), 0.025f,
                 new Color(0.48f, 0.56f, 0.8f), font, parent);
         }
 
@@ -393,7 +445,8 @@ namespace GAIALyricsMovie.Editor
             IReadOnlyList<LyricCue> cues,
             Transform lyricsRoot,
             Transform visualsRoot,
-            SignalEffects signalEffects)
+            SignalEffects signalEffects,
+            out GAIASignalEventReceiver eventReceiver)
         {
             var audioObject = new GameObject("GAIA 2D Audio");
             audioObject.transform.SetParent(parent, false);
@@ -406,7 +459,8 @@ namespace GAIALyricsMovie.Editor
             var directorObject = new GameObject("GAIA Show Director");
             directorObject.transform.SetParent(parent, false);
             PlayableDirector director = directorObject.AddComponent<PlayableDirector>();
-            director.playOnAwake = true;
+            // 再生開始は▶ボタンのGAIAShowControllerがサーバー時刻基準で同期制御する。
+            director.playOnAwake = false;
             director.extrapolationMode = DirectorWrapMode.None;
             director.timeUpdateMode = DirectorUpdateMode.GameTime;
 
@@ -442,8 +496,8 @@ namespace GAIALyricsMovie.Editor
             SignalAsset finaleSignal = CreateSignalAsset(timeline, "GAIA Finale Bloom");
             timeline.CreateMarkerTrack();
             timeline.markerTrack.name = "GAIA Signal Cues";
-            CreateSignalEmitter(timeline.markerTrack, 56.52d, chorusSignal);
-            CreateSignalEmitter(timeline.markerTrack, 153.24d, finaleSignal);
+            CreateSignalEmitter(timeline.markerTrack, ChorusSignalTime, chorusSignal);
+            CreateSignalEmitter(timeline.markerTrack, FinaleSignalTime, finaleSignal);
 
             SignalReceiver signalReceiver = directorObject.AddComponent<SignalReceiver>();
             GAIASignalPreviewEffect previewEffect = directorObject.AddComponent<GAIASignalPreviewEffect>();
@@ -455,9 +509,9 @@ namespace GAIALyricsMovie.Editor
                 finaleSignal,
                 CreatePersistentReaction(previewEffect.OnFinaleBloom));
 
-            GAIASignalEventReceiver eventReceiver =
-                UdonSharpUndo.AddComponent<GAIASignalEventReceiver>(visualsRoot.gameObject);
+            eventReceiver = UdonSharpUndo.AddComponent<GAIASignalEventReceiver>(visualsRoot.gameObject);
             ConfigureSignalEffect(eventReceiver, signalEffects);
+            ConfigureSignalCueTimes(eventReceiver);
             UdonSharpEditorUtility.CopyProxyToUdon(eventReceiver);
 
             director.playableAsset = timeline;
@@ -511,6 +565,59 @@ namespace GAIALyricsMovie.Editor
             serializedReceiver.FindProperty("chorusHalo").objectReferenceValue = signalEffects.ChorusHalo;
             serializedReceiver.FindProperty("finaleBloom").objectReferenceValue = signalEffects.FinaleBloom;
             serializedReceiver.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>シーク復帰(ResyncToTime)用に、SignalEmitterと同じキュー時刻を受信側へ書き込む。</summary>
+        static void ConfigureSignalCueTimes(UnityEngine.Object receiver)
+        {
+            var serializedReceiver = new SerializedObject(receiver);
+            serializedReceiver.FindProperty("chorusPulseTime").floatValue = (float)ChorusSignalTime;
+            serializedReceiver.FindProperty("finaleBloomTime").floatValue = (float)FinaleSignalTime;
+            serializedReceiver.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>
+        /// スポーン脇に▶ボタンを設置し、GAIAShowControllerでインスタンス同期の再生開始を提供する。
+        /// 再生中にもう一度Interactすると全員が最初から再生し直す。
+        /// </summary>
+        static void CreatePlayButton(
+            Transform parent,
+            Material floor,
+            Material cyan,
+            Font font,
+            PlayableDirector director,
+            GAIASignalEventReceiver signalReceiver)
+        {
+            // Observation Platform上面(y=-0.05)、Player Spawn(0, 0.05, -9)の右前方で手が届く位置。
+            GameObject pedestal = CreatePrimitive("GAIA Play Pedestal", PrimitiveType.Cylinder, parent);
+            pedestal.transform.position = new Vector3(1.5f, 0.5f, -7.6f);
+            pedestal.transform.localScale = new Vector3(0.5f, 0.55f, 0.5f);
+            pedestal.GetComponent<Renderer>().sharedMaterial = floor;
+
+            GameObject button = CreatePrimitive("GAIA Play Button", PrimitiveType.Cube, parent);
+            button.transform.position = new Vector3(1.5f, 1.11f, -7.6f);
+            button.transform.localScale = new Vector3(0.34f, 0.12f, 0.34f);
+            button.GetComponent<Renderer>().sharedMaterial = cyan;
+
+            // TextMesh.textはUdon未公開のため、ラベルは静的表示に留めてUdonからは触らない。
+            CreateStaticText(
+                "GAIA Play Button Label", "▶ GAIA START", new Vector3(1.5f, 1.5f, -7.6f), 0.04f, Cyan, font, parent);
+
+            GAIAShowController controller = UdonSharpUndo.AddComponent<GAIAShowController>(button);
+            var serializedController = new SerializedObject(controller);
+            serializedController.FindProperty("director").objectReferenceValue = director;
+            serializedController.FindProperty("signalReceiver").objectReferenceValue = signalReceiver;
+            serializedController.FindProperty("songDuration").doubleValue = SongDuration;
+            serializedController.ApplyModifiedPropertiesWithoutUndo();
+            UdonSharpEditorUtility.CopyProxyToUdon(controller);
+
+            UdonBehaviour backingBehaviour = UdonSharpEditorUtility.GetBackingUdonBehaviour(controller);
+            var serializedBacking = new SerializedObject(backingBehaviour);
+            SerializedProperty interactTextProperty = serializedBacking.FindProperty("interactText");
+            if (interactTextProperty == null)
+                throw new InvalidOperationException("UdonBehaviourにinteractTextが見つかりません。VRChat SDKの構成を確認してください。");
+            interactTextProperty.stringValue = PlayButtonInteractText;
+            serializedBacking.ApplyModifiedPropertiesWithoutUndo();
         }
 
         static void BindReference(PlayableDirector director, ref ExposedReference<Transform> reference, Transform value)
@@ -654,7 +761,7 @@ namespace GAIALyricsMovie.Editor
             return layer;
         }
 
-        static void CreateStaticText(string name, string value, Vector3 position, float size, Color color, Font font, Transform parent)
+        static TextMesh CreateStaticText(string name, string value, Vector3 position, float size, Color color, Font font, Transform parent)
         {
             var textObject = new GameObject(name);
             textObject.transform.SetParent(parent, false);
@@ -669,6 +776,7 @@ namespace GAIALyricsMovie.Editor
             text.color = color;
             text.richText = false;
             textObject.GetComponent<MeshRenderer>().sharedMaterial = font.material;
+            return text;
         }
 
         static T RequireAsset<T>(string path) where T : UnityEngine.Object

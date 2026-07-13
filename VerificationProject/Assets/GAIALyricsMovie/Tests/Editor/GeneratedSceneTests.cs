@@ -17,6 +17,7 @@ namespace GAIALyricsMovie.Tests
         const string ScenePath = "Assets/GAIALyricsMovie/Scenes/GAIA_LyricsMovie.unity";
         const string AudioPath = "Assets/GAIALyricsMovie/Audio/GAIA.ogg";
         const string SignalProgramPath = "Assets/GAIALyricsMovie/Signals/GAIASignalEventReceiver.asset";
+        const string ShowControllerProgramPath = "Assets/GAIALyricsMovie/Udon/GAIAShowController.asset";
         const string TempBakeFolder = "Assets/BakedTimelineClips/__ndbake_temp__";
         static readonly double[] SignalTimes = { 56.52d, 153.24d };
         static readonly string[] SignalEventNames = { "OnChorusPulse", "OnFinaleBloom" };
@@ -29,7 +30,8 @@ namespace GAIALyricsMovie.Tests
 
             PlayableDirector director = Object.FindObjectOfType<PlayableDirector>(true);
             Assert.That(director, Is.Not.Null);
-            Assert.That(director.playOnAwake, Is.True);
+            Assert.That(director.playOnAwake, Is.False,
+                "再生開始は▶ボタンのGAIAShowControllerが同期制御するため、playOnAwakeは無効のはずです。");
 
             var timeline = director.playableAsset as TimelineAsset;
             Assert.That(timeline, Is.Not.Null);
@@ -88,6 +90,10 @@ namespace GAIALyricsMovie.Tests
             var finaleBloom = serializedEventReceiver.FindProperty("finaleBloom").objectReferenceValue as GameObject;
             Assert.That(chorusHalo, Is.Not.Null);
             Assert.That(finaleBloom, Is.Not.Null);
+            Assert.That(serializedEventReceiver.FindProperty("chorusPulseTime").floatValue,
+                Is.EqualTo((float)SignalTimes[0]));
+            Assert.That(serializedEventReceiver.FindProperty("finaleBloomTime").floatValue,
+                Is.EqualTo((float)SignalTimes[1]));
             Component backingUdon = marker.signalEventHost.GetComponents<Component>()
                 .Single(component => component.GetType().FullName == "VRC.Udon.UdonBehaviour");
             var serializedBackingUdon = new SerializedObject(backingUdon);
@@ -100,6 +106,27 @@ namespace GAIALyricsMovie.Tests
                 Is.EquivalentTo(new UnityEngine.Object[] { chorusHalo, finaleBloom }));
             Assert.That(chorusHalo.activeSelf, Is.False);
             Assert.That(finaleBloom.activeSelf, Is.False);
+
+            GameObject playButton = GameObject.Find("GAIA Play Button");
+            Assert.That(playButton, Is.Not.Null);
+            Assert.That(playButton.GetComponent<Collider>(), Is.Not.Null,
+                "▶ボタンはVRChatのInteract対象になるコライダーが必要です。");
+            MonoBehaviour showController = playButton.GetComponents<MonoBehaviour>()
+                .Single(component => component.GetType().Name == "GAIAShowController");
+            var serializedShowController = new SerializedObject(showController);
+            Assert.That(serializedShowController.FindProperty("director").objectReferenceValue,
+                Is.SameAs(director));
+            Assert.That(serializedShowController.FindProperty("signalReceiver").objectReferenceValue,
+                Is.SameAs(eventReceiver));
+            Assert.That(serializedShowController.FindProperty("songDuration").doubleValue,
+                Is.EqualTo(221.504d).Within(0.001d));
+            Component buttonBackingUdon = playButton.GetComponents<Component>()
+                .Single(component => component.GetType().FullName == "VRC.Udon.UdonBehaviour");
+            var serializedButtonUdon = new SerializedObject(buttonBackingUdon);
+            Assert.That(serializedButtonUdon.FindProperty("programSource").objectReferenceValue, Is.Not.Null);
+            Assert.That(serializedButtonUdon.FindProperty("interactText").stringValue,
+                Is.EqualTo("Start GAIA Show"));
+            Assert.That(AssetDatabase.LoadMainAssetAtPath(ShowControllerProgramPath), Is.Not.Null);
 
             GameObject lyrics = GameObject.Find("Lyrics");
             Assert.That(lyrics, Is.Not.Null);
@@ -120,6 +147,40 @@ namespace GAIALyricsMovie.Tests
                     $"{materialName} の _EMISSION キーワードが無効です。エミッションが消えてVRChatで真っ黒に見えます。");
                 Assert.That(material.GetColor("_EmissionColor").maxColorComponent, Is.GreaterThan(0f), materialName);
             }
+        }
+
+        [Test]
+        public void SignalReceiver_ResyncToTime_RestoresSkippedSignalStateWithoutCountingEvents()
+        {
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            MonoBehaviour receiver = Object.FindObjectsOfType<MonoBehaviour>(true)
+                .Single(component => component.GetType().Name == "GAIASignalEventReceiver");
+            var serializedReceiver = new SerializedObject(receiver);
+            var chorusHalo = (GameObject)serializedReceiver.FindProperty("chorusHalo").objectReferenceValue;
+            var finaleBloom = (GameObject)serializedReceiver.FindProperty("finaleBloom").objectReferenceValue;
+            System.Reflection.MethodInfo resync = receiver.GetType().GetMethod("ResyncToTime");
+            Assert.That(resync, Is.Not.Null);
+
+            resync.Invoke(receiver, new object[] { 0f });
+            Assert.That(chorusHalo.activeSelf, Is.False);
+            Assert.That(finaleBloom.activeSelf, Is.False);
+
+            resync.Invoke(receiver, new object[] { 60f });
+            Assert.That(chorusHalo.activeSelf, Is.True);
+            Assert.That(finaleBloom.activeSelf, Is.False);
+
+            resync.Invoke(receiver, new object[] { 200f });
+            Assert.That(chorusHalo.activeSelf, Is.False);
+            Assert.That(finaleBloom.activeSelf, Is.True);
+
+            // 保存シーンの初期状態(両方非表示)へ戻してから、実イベント計測が汚れていないことを確認する。
+            resync.Invoke(receiver, new object[] { 0f });
+            Assert.That(chorusHalo.activeSelf, Is.False);
+            Assert.That(finaleBloom.activeSelf, Is.False);
+            serializedReceiver.Update();
+            Assert.That(serializedReceiver.FindProperty("eventCount").intValue, Is.Zero,
+                "ResyncToTimeは実イベント計測のeventCountを増やしてはいけません。");
+            Assert.That(serializedReceiver.FindProperty("lastEventName").stringValue, Is.Empty);
         }
 
         [Test]

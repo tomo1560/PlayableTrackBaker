@@ -10,6 +10,8 @@ namespace GAIALyricsMovie
     {
         [SerializeField] GameObject chorusHalo;
         [SerializeField] GameObject finaleBloom;
+        [SerializeField] float chorusPulseTime = 56.52f;
+        [SerializeField] float finaleBloomTime = 153.24f;
 
         [HideInInspector] public int eventCount;
         [HideInInspector] public string lastEventName;
@@ -22,6 +24,17 @@ namespace GAIALyricsMovie
         public void OnFinaleBloom()
         {
             ShowEffect(finaleBloom, chorusHalo, nameof(OnFinaleBloom));
+        }
+
+        /// <summary>
+        /// シークで踏まなかったAnimationEventは発火しないため、経過秒からSignal演出の状態を復元する。
+        /// 実イベント計測用のeventCount / lastEventNameはここでは変更しない。
+        /// </summary>
+        public void ResyncToTime(float elapsedSeconds)
+        {
+            chorusHalo.SetActive(elapsedSeconds >= chorusPulseTime && elapsedSeconds < finaleBloomTime);
+            finaleBloom.SetActive(elapsedSeconds >= finaleBloomTime);
+            Debug.Log($"[GAIA Signal / Udon] ResyncToTime({elapsedSeconds:F2}s)");
         }
 
         void ShowEffect(GameObject enabledEffect, GameObject disabledEffect, string eventName)

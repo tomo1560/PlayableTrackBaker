@@ -7,7 +7,10 @@ Build & Publish 時に PlayableTrackBaker で非破壊ベイクする VRChat Wor
 
 1. Unity 2022.3.22f1 で `VerificationProject` を開きます。
 2. `Assets/GAIALyricsMovie/Scenes/GAIA_LyricsMovie.unity` を開きます。
-3. Play を押すと、GAIA（3:41.504）がローカルで自動再生されます。
+3. Play を押し、スポーン脇の `▶ GAIA START` ボタンを Interact すると
+   GAIA（3:41.504）が再生されます。VRChat SDK 付属の ClientSim が
+   Play モードでネットワークAPIをローカル実装するため、エディタ上でも
+   ボタンのクリック（Interact）でそのまま動作します。
 
 シーンは Build Settings に登録済みです。`GAIA Show Director` には
 `PlayableDirector` と `TimelineBakeMarker` があり、保存TimelineのCustom PlayableTrackは
@@ -28,9 +31,25 @@ Build & Publish / Build & Test時は、同じ2個のSignalEmitterを
 `GAIASignalEventReceiver`（UdonSharp）が同じ演出を再生します。
 Editor用のプレビューコンポーネントはビルド用シーンから自動除去されるため、本番で二重発火しません。
 
-確認するには、Unity PlayまたはVRChatのBuild & Testで再生し、56.52秒にシアンの
+確認するには、Unity PlayまたはVRChatのBuild & Testで▶ボタンから再生し、56.52秒にシアンの
 ハロー、153.24秒にマゼンタのブルームへ切り替わることを見ます。Build & Test側では
 VRChat client output logの `[GAIA Signal / Udon]` でもUdonイベント名と発火回数を確認できます。
+
+## ▶ボタンとインスタンス同期再生
+
+スポーン脇の `GAIA Play Button` を Interact すると、`Udon/GAIAShowController.cs`
+（UdonSharp / Manual sync）が `Networking.GetServerTimeInSeconds()` を基準時刻として
+同期変数へ書き込み、インスタンス全員の `PlayableDirector` を同じ経過秒から再生します。
+AudioTrackはPlayableDirectorにバインドされているため、シークだけで音も追従します。
+
+- 途中参加者は `OnDeserialization` で自動追従し、現在の経過秒へシークして再生します。
+- 再生中にもう一度押すと、全員が最初から再生し直します。
+- 再生中は5秒ごとにサーバー時刻と `director.time` を比較し、0.1秒を超える
+  ずれをハードシークで補正します。
+- シークで飛ばした SignalEmitter 由来の演出は `GAIASignalEventReceiver.ResyncToTime`
+  が経過秒に合わせて復元します（実イベント計測の eventCount は増えません）。
+- 曲（221.504秒）の終了後に入室した場合は停止状態のまま、フィナーレ演出の
+  最終状態のみ表示します。
 
 ## 再生成
 
@@ -38,7 +57,8 @@ VRChat client output logの `[GAIA Signal / Udon]` でもUdonイベント名と�
 自動ベイク用の未ベイクシーンとTimelineを再生成します。
 
 再生成メニューはこのサンプルが所有する Generated、Scene、旧GAIA用 bake clipのみを
-作り直します。音源、LRC、フォントは変更しません。
+作り直します。音源、LRC、フォントは変更しません。また、`Udon/GAIAShowController.asset`
+（UdonSharp program asset）が無ければ生成し、未コンパイルなら同期コンパイルします。
 
 ## 仕様と注意
 
@@ -46,12 +66,13 @@ VRChat client output logの `[GAIA Signal / Udon]` でもUdonイベント名と�
 - クレジット: 作曲 森田交一、作詞 火ノ岡レイ、ボーカル KEI
 - 歌詞: `Data/GAIA.lrc` の時刻を使用（44個の表示オブジェクト）
 - 演出: Transform のみを 30 fps、High Precision Reduction 0.002 でベイク
-- 再生: `PlayableDirector.playOnAwake` によるローカル自動再生
-- 同期: 各参加者の入室時刻から始まるため、インスタンス全体では同期しません
+- 再生: ▶ボタンの Interact で開始（`playOnAwake` は無効）
+- 同期: `Networking.GetServerTimeInSeconds()` 基準でインスタンス全体が同期し、
+  途中参加者も自動追従します（5秒ごと・0.1秒閾値のドリフト補正付き）
 - ParticleSystem は Unity/VRChat ネイティブ再生で、AnimationClip にはベイクしません
 
-インスタンス同期・途中参加追従・再生UIが必要な場合は、Udon のサーバー時刻同期を
-別途追加してください。これは PlayableTrackBaker の Transform ベイク範囲外です。
+インスタンス同期・途中参加追従・再生UIはサンプル側の `Udon/GAIAShowController.cs` が
+提供します。PlayableTrackBaker 本体の機能は Transform の非破壊ベイクのみです。
 
 ## Font
 
