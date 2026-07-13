@@ -1,6 +1,60 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-8146887484625427311
+--- !u!114 &-8647603651227265015
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f10dd60657c6004587f237a7e90f8e4, type: 3}
+  m_Name: AudioPlayableAsset
+  m_EditorClassIdentifier:
+  m_Clip: {fileID: 8300000, guid: eb3fb486d8d51f1408681cb4cc8d3e02, type: 3}
+  m_Loop: 0
+  m_bufferingTime: 0.1
+  m_ClipProperties:
+    volume: 1
+--- !u!114 &-3838808284144921300
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a16748d9461eae46a725db9776d5390, type: 3}
+  m_Name: GAIA Signal Cues
+  m_EditorClassIdentifier:
+  m_Version: 3
+  m_AnimClip: {fileID: 0}
+  m_Locked: 0
+  m_Muted: 0
+  m_CustomPlayableFullTypename:
+  m_Curves: {fileID: 0}
+  m_Parent: {fileID: 11400000}
+  m_Children: []
+  m_Clips: []
+  m_Markers:
+    m_Objects:
+    - {fileID: -2160009780993414111}
+    - {fileID: 7103137791838631261}
+--- !u!114 &-3808125335814396396
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6fa2d92fc1b3f34da284357edf89c3b, type: 3}
+  m_Name: GAIA Finale Bloom
+  m_EditorClassIdentifier:
+--- !u!114 &-2884199784826548855
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -24,10 +78,10 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 0
     m_ClipIn: 0
-    m_Asset: {fileID: -7435218382004635706}
+    m_Asset: {fileID: -8647603651227265015}
     m_Duration: 221.50399780273438
     m_TimeScale: 1
-    m_ParentTrack: {fileID: -8146887484625427311}
+    m_ParentTrack: {fileID: -2884199784826548855}
     m_EaseInDuration: 0
     m_EaseOutDuration: 0
     m_BlendInDuration: -1
@@ -96,7 +150,7 @@ MonoBehaviour:
     volume: 1
     stereoPan: 0
     spatialBlend: 0
---- !u!114 &-7435218382004635706
+--- !u!114 &-2160009780993414111
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -105,15 +159,14 @@ MonoBehaviour:
   m_GameObject: {fileID: 0}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 4f10dd60657c6004587f237a7e90f8e4, type: 3}
-  m_Name: AudioPlayableAsset
+  m_Script: {fileID: 11500000, guid: 15c38f6fa1940124db1ab7f6fe7268d1, type: 3}
+  m_Name:
   m_EditorClassIdentifier:
-  m_Clip: {fileID: 8300000, guid: eb3fb486d8d51f1408681cb4cc8d3e02, type: 3}
-  m_Loop: 0
-  m_bufferingTime: 0.1
-  m_ClipProperties:
-    volume: 1
---- !u!114 &-5651891688194766790
+  m_Time: 56.52
+  m_Retroactive: 0
+  m_EmitOnce: 0
+  m_Asset: {fileID: -226682882797217244}
+--- !u!114 &-333196601764460256
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -126,10 +179,10 @@ MonoBehaviour:
   m_Name: GaiaLyricsPlayableAsset
   m_EditorClassIdentifier:
   lyricsRoot:
-    exposedName: 9f9e649b283119347b3d02c63087fe46
+    exposedName: d3e2207d9cf9ea24fba59afac24b07ca
     defaultValue: {fileID: 0}
   visualRoot:
-    exposedName: 9488d6f04ec22c44997c1a041738fedd
+    exposedName: 7359cd1a6b8183545a3ce1b2646e0826
     defaultValue: {fileID: 0}
   cueStartTimes:
   - 4.7
@@ -221,7 +274,7 @@ MonoBehaviour:
   - 183.43
   - 187.97
   - 192.97
---- !u!114 &-4603864879931427685
+--- !u!114 &-332778933364142045
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -245,10 +298,10 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 0
     m_ClipIn: 0
-    m_Asset: {fileID: -5651891688194766790}
+    m_Asset: {fileID: -333196601764460256}
     m_Duration: 221.504
     m_TimeScale: 1
-    m_ParentTrack: {fileID: -4603864879931427685}
+    m_ParentTrack: {fileID: -332778933364142045}
     m_EaseInDuration: 0
     m_EaseOutDuration: 0
     m_BlendInDuration: -1
@@ -313,6 +366,18 @@ MonoBehaviour:
     m_DisplayName: LRC-synchronised deterministic motion
   m_Markers:
     m_Objects: []
+--- !u!114 &-226682882797217244
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d6fa2d92fc1b3f34da284357edf89c3b, type: 3}
+  m_Name: GAIA Chorus Pulse
+  m_EditorClassIdentifier:
 --- !u!114 &11400000
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -327,11 +392,27 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   m_Version: 0
   m_Tracks:
-  - {fileID: -8146887484625427311}
-  - {fileID: -4603864879931427685}
+  - {fileID: -2884199784826548855}
+  - {fileID: -332778933364142045}
   m_FixedDuration: 221.504
   m_EditorSettings:
     m_Framerate: 60
     m_ScenePreview: 1
   m_DurationMode: 1
-  m_MarkerTrack: {fileID: 0}
+  m_MarkerTrack: {fileID: -3838808284144921300}
+--- !u!114 &7103137791838631261
+MonoBehaviour:
+  m_ObjectHideFlags: 1
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 15c38f6fa1940124db1ab7f6fe7268d1, type: 3}
+  m_Name:
+  m_EditorClassIdentifier:
+  m_Time: 153.24
+  m_Retroactive: 0
+  m_EmitOnce: 0
+  m_Asset: {fileID: -3808125335814396396}

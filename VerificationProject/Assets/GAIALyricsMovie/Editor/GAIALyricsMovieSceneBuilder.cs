@@ -3,9 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using UdonSharp;
+using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.Events;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Events;
 using UnityEngine.Playables;
 using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
@@ -25,6 +29,8 @@ namespace GAIALyricsMovie.Editor
         const string AudioPath = SampleRoot + "/Audio/GAIA.ogg";
         const string LyricsPath = SampleRoot + "/Data/GAIA.lrc";
         const string FontPath = SampleRoot + "/Fonts/NotoSansJP-VF.ttf";
+        const string SignalReceiverScriptPath = SampleRoot + "/Signals/GAIASignalEventReceiver.cs";
+        const string SignalReceiverProgramPath = SampleRoot + "/Signals/GAIASignalEventReceiver.asset";
         const double SongDuration = 221.504d;
         const string OwnedBakeLabel = "GAIALyricsMovie.OwnedBake.v1";
 
@@ -75,12 +81,15 @@ namespace GAIALyricsMovie.Editor
             Material violetMaterial = CreateStandardMaterial("GAIA_Violet", new Color(0.025f, 0.01f, 0.12f), Violet, 1.35f);
             Material starMaterial = CreateParticleMaterial();
             Mesh torusMesh = CreateTorusMesh();
+            ValidateSignalReceiverProgramAsset();
 
             GameObject worldRoot = new GameObject("GAIA Lyrics Movie World");
             CreateWorldDescriptor(worldRoot.transform);
             CreateArchitecture(worldRoot.transform, floorMaterial, cyanMaterial, magentaMaterial);
             Transform visualsRoot = CreateVisuals(worldRoot.transform, torusMesh, cyanMaterial, magentaMaterial, violetMaterial);
             Transform lyricsRoot = CreateLyrics(worldRoot.transform, japaneseFont, cues);
+            SignalEffects signalEffects = CreateSignalEffects(
+                worldRoot.transform, torusMesh, cyanMaterial, magentaMaterial);
             CreateStarField(worldRoot.transform, starMaterial);
             CreateInformationTypography(worldRoot.transform, japaneseFont);
 
@@ -89,7 +98,8 @@ namespace GAIALyricsMovie.Editor
                 audioClip,
                 cues,
                 lyricsRoot,
-                visualsRoot);
+                visualsRoot,
+                signalEffects);
 
             EditorSceneManager.MarkSceneDirty(scene);
             if (!EditorSceneManager.SaveScene(scene, ScenePath))
@@ -104,6 +114,18 @@ namespace GAIALyricsMovie.Editor
                 $"Scene: {ScenePath}\nTimeline: {TimelinePath}\n" +
                 "Play では custom Playable を再生し、Build & Publish 時はTransform演出を一時Timelineへ非破壊ベイクします。",
                 directorObject);
+        }
+
+        readonly struct SignalEffects
+        {
+            public readonly GameObject ChorusHalo;
+            public readonly GameObject FinaleBloom;
+
+            public SignalEffects(GameObject chorusHalo, GameObject finaleBloom)
+            {
+                ChorusHalo = chorusHalo;
+                FinaleBloom = finaleBloom;
+            }
         }
 
         static void DeleteOwnedBakeClips()
@@ -149,9 +171,23 @@ namespace GAIALyricsMovie.Editor
             importer.SaveAndReimport();
         }
 
+        static void ValidateSignalReceiverProgramAsset()
+        {
+            MonoScript receiverScript = RequireAsset<MonoScript>(SignalReceiverScriptPath);
+            UdonSharpProgramAsset program = RequireAsset<UdonSharpProgramAsset>(SignalReceiverProgramPath);
+            if (program.sourceCsScript != receiverScript)
+                throw new InvalidOperationException(
+                    $"固定パスのUdonSharp program assetはGAIA受信スクリプト所有ではありません: {SignalReceiverProgramPath}");
+            if (program.CompiledVersion != UdonSharpProgramVersion.CurrentVersion ||
+                program.SerializedProgramAsset == null ||
+                UdonSharpProgramAsset.GetProgramAssetForClass(typeof(GAIASignalEventReceiver)) != program)
+                throw new InvalidOperationException(
+                    "GAIASignalEventReceiverが未コンパイルです。UdonSharpのコンパイル完了後に再実行してください。");
+        }
+
         static void ValidateSourceAssets()
         {
-            var missing = new[] { AudioPath, LyricsPath, FontPath }
+            var missing = new[] { AudioPath, LyricsPath, FontPath, SignalReceiverScriptPath }
                 .Where(path => !File.Exists(ToAbsoluteAssetPath(path)))
                 .ToArray();
             if (missing.Length > 0)
@@ -282,6 +318,32 @@ namespace GAIALyricsMovie.Editor
             return root;
         }
 
+        static SignalEffects CreateSignalEffects(
+            Transform parent,
+            Mesh torus,
+            Material cyan,
+            Material magenta)
+        {
+            Transform root = CreateLayer("Signal Effects", parent);
+            root.position = new Vector3(0f, 4.1f, 16.5f);
+
+            var chorusHalo = new GameObject("Chorus Signal Halo");
+            chorusHalo.transform.SetParent(root, false);
+            chorusHalo.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            chorusHalo.transform.localScale = Vector3.one * 8.5f;
+            chorusHalo.AddComponent<MeshFilter>().sharedMesh = torus;
+            chorusHalo.AddComponent<MeshRenderer>().sharedMaterial = cyan;
+            chorusHalo.SetActive(false);
+
+            GameObject finaleBloom = CreatePrimitive("Finale Signal Bloom", PrimitiveType.Sphere, root);
+            finaleBloom.transform.localScale = Vector3.one * 5.2f;
+            finaleBloom.GetComponent<Renderer>().sharedMaterial = magenta;
+            UnityEngine.Object.DestroyImmediate(finaleBloom.GetComponent<Collider>());
+            finaleBloom.SetActive(false);
+
+            return new SignalEffects(chorusHalo, finaleBloom);
+        }
+
         static Transform CreateLyrics(Transform parent, Font font, IReadOnlyList<LyricCue> cues)
         {
             var root = new GameObject("Lyrics").transform;
@@ -323,7 +385,8 @@ namespace GAIALyricsMovie.Editor
             AudioClip audioClip,
             IReadOnlyList<LyricCue> cues,
             Transform lyricsRoot,
-            Transform visualsRoot)
+            Transform visualsRoot,
+            SignalEffects signalEffects)
         {
             var audioObject = new GameObject("GAIA 2D Audio");
             audioObject.transform.SetParent(parent, false);
@@ -368,6 +431,28 @@ namespace GAIALyricsMovie.Editor
             BindReference(director, ref playableAsset.lyricsRoot, lyricsRoot);
             BindReference(director, ref playableAsset.visualRoot, visualsRoot);
 
+            SignalAsset chorusSignal = CreateSignalAsset(timeline, "GAIA Chorus Pulse");
+            SignalAsset finaleSignal = CreateSignalAsset(timeline, "GAIA Finale Bloom");
+            timeline.CreateMarkerTrack();
+            timeline.markerTrack.name = "GAIA Signal Cues";
+            CreateSignalEmitter(timeline.markerTrack, 56.52d, chorusSignal);
+            CreateSignalEmitter(timeline.markerTrack, 153.24d, finaleSignal);
+
+            SignalReceiver signalReceiver = directorObject.AddComponent<SignalReceiver>();
+            GAIASignalPreviewEffect previewEffect = directorObject.AddComponent<GAIASignalPreviewEffect>();
+            ConfigureSignalEffect(previewEffect, signalEffects);
+            signalReceiver.AddReaction(
+                chorusSignal,
+                CreatePersistentReaction(previewEffect.OnChorusPulse));
+            signalReceiver.AddReaction(
+                finaleSignal,
+                CreatePersistentReaction(previewEffect.OnFinaleBloom));
+
+            GAIASignalEventReceiver eventReceiver =
+                UdonSharpUndo.AddComponent<GAIASignalEventReceiver>(visualsRoot.gameObject);
+            ConfigureSignalEffect(eventReceiver, signalEffects);
+            UdonSharpEditorUtility.CopyProxyToUdon(eventReceiver);
+
             director.playableAsset = timeline;
             var marker = directorObject.AddComponent<TimelineBakeMarker>();
             marker.director = director;
@@ -377,10 +462,48 @@ namespace GAIALyricsMovie.Editor
             marker.highPrecision = true;
             marker.highPrecisionReduction = 0.002f;
             marker.mutePlayableTracksAfterBake = true;
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = visualsRoot.gameObject;
+            marker.signalEventRoutes = new[]
+            {
+                new SignalEventRoute(chorusSignal, nameof(GAIASignalEventReceiver.OnChorusPulse)),
+                new SignalEventRoute(finaleSignal, nameof(GAIASignalEventReceiver.OnFinaleBloom)),
+            };
 
             EditorUtility.SetDirty(timeline);
             EditorUtility.SetDirty(playableAsset);
             return directorObject;
+        }
+
+        static SignalAsset CreateSignalAsset(TimelineAsset timeline, string name)
+        {
+            var signal = ScriptableObject.CreateInstance<SignalAsset>();
+            signal.name = name;
+            AssetDatabase.AddObjectToAsset(signal, timeline);
+            return signal;
+        }
+
+        static void CreateSignalEmitter(TrackAsset track, double time, SignalAsset signal)
+        {
+            SignalEmitter emitter = track.CreateMarker<SignalEmitter>(time);
+            emitter.asset = signal;
+            emitter.retroactive = false;
+            emitter.emitOnce = false;
+        }
+
+        static UnityEvent CreatePersistentReaction(UnityAction callback)
+        {
+            var reaction = new UnityEvent();
+            UnityEventTools.AddPersistentListener(reaction, callback);
+            return reaction;
+        }
+
+        static void ConfigureSignalEffect(UnityEngine.Object receiver, SignalEffects signalEffects)
+        {
+            var serializedReceiver = new SerializedObject(receiver);
+            serializedReceiver.FindProperty("chorusHalo").objectReferenceValue = signalEffects.ChorusHalo;
+            serializedReceiver.FindProperty("finaleBloom").objectReferenceValue = signalEffects.FinaleBloom;
+            serializedReceiver.ApplyModifiedPropertiesWithoutUndo();
         }
 
         static void BindReference(PlayableDirector director, ref ExposedReference<Transform> reference, Transform value)

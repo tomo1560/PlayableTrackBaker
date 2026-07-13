@@ -17,6 +17,21 @@ Build & Publish / Build & Test 時は、ビルド用一時シーン上でTimelin
 `[Baked] Lyrics` / `[Baked] Baked Visuals` を自動生成します。保存シーンと元Timelineは
 変更されず、一時アセットもビルド後に削除されます。
 
+## SignalEmitter 演出
+
+Timeline のグローバルMarker Track `GAIA Signal Cues` には、56.52秒の `GAIA Chorus Pulse` と
+153.24秒の `GAIA Finale Bloom` があります。Unity Playでは `SignalReceiver` と
+プレビュー演出がシアンのハロー／マゼンタのブルームを切り替えます。
+
+Build & Publish / Build & Test時は、同じ2個のSignalEmitterを
+`[Baked] Baked Visuals` のAnimationClip上にある `SendCustomEvent` へ変換し、
+`GAIASignalEventReceiver`（UdonSharp）が同じ演出を再生します。
+Editor用のプレビューコンポーネントはビルド用シーンから自動除去されるため、本番で二重発火しません。
+
+確認するには、Unity PlayまたはVRChatのBuild & Testで再生し、56.52秒にシアンの
+ハロー、153.24秒にマゼンタのブルームへ切り替わることを見ます。Build & Test側では
+VRChat client output logの `[GAIA Signal / Udon]` でもUdonイベント名と発火回数を確認できます。
+
 ## 再生成
 
 `Tools > PlayableTrackBaker > Create GAIA Lyrics Movie Sample` を実行すると、
