@@ -142,6 +142,72 @@ namespace PlayableTrackBaking.Tests
         }
 
         [Test]
+        public void RunBake_CountsOneTimelineForMultipleMarkersOnSameDirector()
+        {
+            var rig = CreateBakeableMarker("SharedDirector");
+            var secondRoot = new GameObject("ProgressTarget_SharedDirectorSecond");
+            _cleanup.Add(secondRoot);
+            var secondMarker = rig.marker.gameObject.AddComponent<TimelineBakeMarker>();
+            secondMarker.director = rig.marker.director;
+            secondMarker.recordRoots = new[] { secondRoot };
+            secondMarker.frameRate = 10f;
+            secondMarker.highPrecision = true;
+            var progress = new List<BakeProgress>();
+
+            int baked = PlayableTrackBaker.RunBake(
+                new[] { rig.marker, secondMarker }, update =>
+                {
+                    progress.Add(update);
+                    return true;
+                });
+
+            _assetPaths.Add(PlayableTrackBakeCore.BuildClipAssetPath(
+                rig.marker.director, rig.timeline, rig.marker.recordRoots[0], 0));
+            _assetPaths.Add(PlayableTrackBakeCore.BuildClipAssetPath(
+                rig.marker.director, rig.timeline, secondRoot, 1));
+
+            Assert.AreEqual(1, baked, "戻り値の Timeline 数も director group 単位で数えるべき");
+            Assert.AreEqual(1, progress.Count);
+            Assert.AreEqual(1, progress[0].CompletedCount);
+            Assert.AreEqual(1, progress[0].TotalCount);
+        }
+
+        [Test]
+        public void RunBake_NonBakeableGroupStillAdvancesProgressToOneHundredPercent()
+        {
+            var nonBakeableObject = new GameObject("ProgressDirector_NonBakeable");
+            _cleanup.Add(nonBakeableObject);
+            var nonBakeableDirector = nonBakeableObject.AddComponent<PlayableDirector>();
+            var nonBakeableTimeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            _cleanup.Add(nonBakeableTimeline);
+            nonBakeableDirector.playableAsset = nonBakeableTimeline;
+            var nonBakeableMarker = nonBakeableObject.AddComponent<TimelineBakeMarker>();
+            nonBakeableMarker.director = nonBakeableDirector;
+            nonBakeableMarker.recordRoots = new[] { nonBakeableObject };
+
+            var bakeable = CreateBakeableMarker("MixedBakeable");
+            var progress = new List<BakeProgress>();
+
+            int baked = PlayableTrackBaker.RunBake(
+                new[] { nonBakeableMarker, bakeable.marker }, update =>
+                {
+                    progress.Add(update);
+                    return true;
+                });
+
+            _assetPaths.Add(PlayableTrackBakeCore.BuildClipAssetPath(
+                bakeable.marker.director, bakeable.timeline, bakeable.marker.recordRoots[0], 0));
+
+            Assert.AreEqual(1, baked);
+            Assert.AreEqual(2, progress.Count, "処理済みのベイク不能 group も完了進捗として通知するべき");
+            Assert.AreEqual(1, progress[0].CompletedCount);
+            Assert.AreEqual(2, progress[0].TotalCount);
+            Assert.AreEqual(2, progress[1].CompletedCount);
+            Assert.AreEqual(2, progress[1].TotalCount,
+                "キャンセルされず全 group を処理したときは最終進捗が 100% であるべき");
+        }
+
+        [Test]
         public void Record_CancelsBeforeSamplingAndRestoresPlayableTrackMuteState()
         {
             var rig = CreateBakeableMarker("RecordCancellation");

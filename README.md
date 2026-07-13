@@ -120,7 +120,7 @@ VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前
 
 ### SignalEmitter → Udon Event（Worlds PoC）
 
-`TimelineBakeMarker` の **Bake Signal Events** を有効にすると、指定した SignalAsset を event host の AnimationClip 上の `SendCustomEvent` AnimationEvent に変換できます。event host は Record Roots の一つで、常時有効かつ同じ GameObject に対象 UdonBehaviour がある必要があります。
+`TimelineBakeMarker` の **Bake Signal Events** を有効にすると、指定した SignalAsset を event host の AnimationClip 上の `SendCustomEvent` AnimationEvent に変換できます。event host は Record Roots の一つで、常時有効かつ同じ GameObject に対象 UdonBehaviour がある必要があります。AnimationEvent は host 上の**すべての UdonBehaviour に broadcast** されるため、単一の宛先だけに送る必要がある場合は host に置く UdonBehaviour を1つだけにしてください。
 
 - `Signal Event Routes` に SignalAsset と Udon custom event 名を明示対応付けします。未登録 Signal は無視されます。
 - AnimationEvent は host clip 1本だけに置かれるため、複数 Record Root でも二重発火しません。

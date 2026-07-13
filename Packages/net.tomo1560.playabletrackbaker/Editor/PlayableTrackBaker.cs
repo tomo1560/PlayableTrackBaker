@@ -589,7 +589,8 @@ namespace PlayableTrackBaking
         internal static int AddConfiguredSignalEvents(
             TimelineAsset timeline,
             List<(AnimationClip clip, GameObject root)> recorded,
-            IEnumerable<TimelineBakeMarker> markers)
+            IEnumerable<TimelineBakeMarker> markers,
+            TimelineAsset routeSourceTimeline = null)
         {
             var enabledMarkers = markers
                 .Where(marker => marker != null && marker.bakeSignalEvents)
@@ -616,7 +617,7 @@ namespace PlayableTrackBaking
                     $"[PlayableTrackBaker] {marker.name}: Signal Event Host は Record Roots に一度だけ含める必要があります。");
 
             int count = TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
-                timeline, eventHostClips[0], marker.signalEventRoutes);
+                timeline, eventHostClips[0], marker.signalEventRoutes, routeSourceTimeline);
             if (count > 0)
                 EnsureEventHostTrackCoversTimeline(timeline, eventHostClips[0]);
             return count;
@@ -789,13 +790,16 @@ namespace PlayableTrackBaking
                 {
                     break;
                 }
+                completedTimelines++;
                 if (baked)
                 {
-                    count += groupMarkers.Count;
-                    completedTimelines++;
-                    if (onProgress != null && !onProgress(new BakeProgress(completedTimelines, groups.Count)))
-                        break;
+                    // 1 group は 1 PlayableDirector（= 1 Timeline）なので、marker 数ではなく
+                    // 実際に完了した Timeline 数を返す。
+                    count++;
                 }
+                // ベイク対象外だった group も処理済みとして進捗を進め、正常終了時は必ず 100% にする。
+                if (onProgress != null && !onProgress(new BakeProgress(completedTimelines, groups.Count)))
+                    break;
             }
             if (count > 0)
                 AssetDatabase.SaveAssets();
@@ -1122,7 +1126,7 @@ namespace PlayableTrackBaking
                     AssetDatabase.AddObjectToAsset(clip, clone);
 
                 PlayableTrackBakeCore.AddBakedTracks(director, clone, recorded, true);
-                PlayableTrackBakeCore.AddConfiguredSignalEvents(clone, recorded, validMarkers);
+                PlayableTrackBakeCore.AddConfiguredSignalEvents(clone, recorded, validMarkers, src);
 
                 EditorUtility.SetDirty(clone);
                 EditorUtility.SetDirty(director);

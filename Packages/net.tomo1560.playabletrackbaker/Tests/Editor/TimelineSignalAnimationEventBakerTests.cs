@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.Timeline;
 
@@ -56,6 +57,102 @@ namespace PlayableTrackBaking.Tests
             AssertEvent(events[1], 1.5f, "OnUnlockPuzzle");
             Assert.IsEmpty(otherBakedClip.events,
                 "Signal 用 AnimationEvent は、指定されていないベイク済み clip に複製してはならない");
+        }
+
+        [Test]
+        public void AddRoutedSignalEvents_IgnoresSignalTracksMutedInHierarchyAndMutedGlobalMarkerTrack()
+        {
+            var timeline = CreateTimeline();
+            var group = timeline.CreateTrack<GroupTrack>(null, "Muted Group");
+            var nestedSignalTrack = timeline.CreateTrack<SignalTrack>(group, "Nested Signals");
+            var nestedSignal = CreateSignal("Nested");
+            var globalSignal = CreateSignal("Global");
+            CreateEmitter(nestedSignalTrack, 0.5, nestedSignal);
+            CreateEmitter(timeline.markerTrack, 1.0, globalSignal);
+            group.muted = true;
+            timeline.markerTrack.muted = true;
+            var eventHost = CreateHostClip(timeline, "Event Host");
+
+            int converted = TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                timeline,
+                eventHost,
+                new[]
+                {
+                    new SignalEventRoute(nestedSignal, "OnNested"),
+                    new SignalEventRoute(globalSignal, "OnGlobal"),
+                });
+
+            Assert.AreEqual(0, converted);
+            Assert.IsEmpty(eventHost.events,
+                "親 Track または global markerTrack が mute の Signal は実行されないためベイクしてはならない");
+        }
+
+        [Test]
+        public void AddRoutedSignalEvents_RemovesPreviouslyGeneratedEventsWhenRoutesBecomeEmpty()
+        {
+            var timeline = CreateTimeline();
+            var eventHost = CreateHostClip(timeline, "Event Host");
+            AnimationUtility.SetAnimationEvents(eventHost, new[]
+            {
+                new AnimationEvent
+                {
+                    time = 0.5f,
+                    functionName = "SendCustomEvent",
+                    stringParameter = "ObsoleteEvent",
+                },
+                new AnimationEvent { time = 0.25f, functionName = "UnrelatedEvent" },
+            });
+
+            int converted = TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                timeline, eventHost, Array.Empty<SignalEventRoute>());
+
+            Assert.AreEqual(0, converted);
+            var remaining = eventHost.events;
+            Assert.AreEqual(1, remaining.Length);
+            Assert.AreEqual("UnrelatedEvent", remaining[0].functionName,
+                "route を全削除した再ベイクでも、本ツールが以前生成した SendCustomEvent だけを除去する");
+        }
+
+        [Test]
+        public void AddRoutedSignalEvents_RejectsDuplicateRoutesForSameSignal()
+        {
+            var timeline = CreateTimeline();
+            var signal = CreateSignal("OpenDoor");
+            CreateEmitter(timeline.markerTrack, 0.5, signal);
+            var eventHost = CreateHostClip(timeline, "Event Host");
+
+            var exception = Assert.Throws<ArgumentException>(() =>
+                TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                    timeline,
+                    eventHost,
+                    new[]
+                    {
+                        new SignalEventRoute(signal, "OnOpenDoor"),
+                        new SignalEventRoute(signal, "OnOpenDoorAlternative"),
+                    }));
+
+            StringAssert.Contains("SignalAsset", exception.Message);
+            Assert.IsEmpty(eventHost.events, "曖昧な route では clip を部分的に変更してはならない");
+        }
+
+        [TestCase("")]
+        [TestCase("9StartsWithDigit")]
+        [TestCase("Contains-Hyphen")]
+        [TestCase("class")]
+        public void AddRoutedSignalEvents_RejectsUdonEventNamesThatAreNotCSharpIdentifiers(string eventName)
+        {
+            var timeline = CreateTimeline();
+            var signal = CreateSignal("OpenDoor");
+            var eventHost = CreateHostClip(timeline, "Event Host");
+
+            var exception = Assert.Throws<ArgumentException>(() =>
+                TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                    timeline,
+                    eventHost,
+                    new[] { new SignalEventRoute(signal, eventName) }));
+
+            StringAssert.Contains("Udon event", exception.Message);
+            Assert.IsEmpty(eventHost.events, "不正な event 名では clip を部分的に変更してはならない");
         }
 
         [Test]

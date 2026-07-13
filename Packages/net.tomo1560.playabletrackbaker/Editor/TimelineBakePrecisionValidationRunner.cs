@@ -21,29 +21,35 @@ namespace PlayableTrackBaking
             if (AnimationMode.InAnimationMode())
                 throw new InvalidOperationException("AnimationMode が使用中のため精度検証できません。Preview を停止して再試行してください。");
 
-            var ghost = UnityEngine.Object.Instantiate(root);
-            ghost.name = "[PrecisionValidation] " + root.name;
-            ghost.hideFlags = HideFlags.HideAndDontSave;
-            foreach (var directorInGhost in ghost.GetComponentsInChildren<PlayableDirector>(true))
-                UnityEngine.Object.DestroyImmediate(directorInGhost);
-            foreach (var animator in ghost.GetComponentsInChildren<Animator>(true))
-                UnityEngine.Object.DestroyImmediate(animator);
-            foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>(true))
-                behaviour.enabled = false;
-
-            var original = root.GetComponentsInChildren<Transform>(true);
-            var baked = ghost.GetComponentsInChildren<Transform>(true);
-            if (original.Length != baked.Length)
-            {
-                UnityEngine.Object.DestroyImmediate(ghost);
-                throw new InvalidOperationException("精度検証用ゴーストの Transform 構造が一致しません。");
-            }
-
             double originalTime = director.time;
-            var sampleTimes = BuildSampleTimes(timeline.duration, fps);
-            var sourcePositions = new Vector3[original.Length];
+            GameObject container = null;
             try
             {
+                // active なオブジェクトを直接 Instantiate すると ExecuteAlways 等の Awake/OnEnable が
+                // 複製直後に走る。先に inactive container を作り、その子として一度も active にせず
+                // 複製・評価・破棄することで、ユーザースクリプトのライフサイクル副作用を避ける。
+                container = new GameObject("[PrecisionValidation] Container");
+                container.hideFlags = HideFlags.HideAndDontSave;
+                container.SetActive(false);
+
+                var ghost = UnityEngine.Object.Instantiate(root, container.transform, false);
+                ghost.name = "[PrecisionValidation] " + root.name;
+                ghost.hideFlags = HideFlags.HideAndDontSave;
+                foreach (var directorInGhost in ghost.GetComponentsInChildren<PlayableDirector>(true))
+                    UnityEngine.Object.DestroyImmediate(directorInGhost);
+                foreach (var animator in ghost.GetComponentsInChildren<Animator>(true))
+                    UnityEngine.Object.DestroyImmediate(animator);
+                foreach (var behaviour in ghost.GetComponentsInChildren<MonoBehaviour>(true))
+                    if (behaviour != null)
+                        behaviour.enabled = false;
+
+                var original = root.GetComponentsInChildren<Transform>(true);
+                var baked = ghost.GetComponentsInChildren<Transform>(true);
+                if (original.Length != baked.Length)
+                    throw new InvalidOperationException("精度検証用ゴーストの Transform 構造が一致しません。");
+
+                var sampleTimes = BuildSampleTimes(timeline.duration, fps);
+                var sourcePositions = new Vector3[original.Length];
                 AnimationMode.StartAnimationMode();
                 return TimelineBakePrecisionValidator.ValidatePosition(
                     sampleTimes,
@@ -71,11 +77,18 @@ namespace PlayableTrackBaking
             }
             finally
             {
-                if (AnimationMode.InAnimationMode())
-                    AnimationMode.StopAnimationMode();
-                director.time = originalTime;
-                director.Evaluate();
-                UnityEngine.Object.DestroyImmediate(ghost);
+                try
+                {
+                    if (AnimationMode.InAnimationMode())
+                        AnimationMode.StopAnimationMode();
+                    director.time = originalTime;
+                    director.Evaluate();
+                }
+                finally
+                {
+                    if (container != null)
+                        UnityEngine.Object.DestroyImmediate(container);
+                }
             }
         }
 

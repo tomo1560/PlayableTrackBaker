@@ -22,6 +22,7 @@ namespace PlayableTrackBaking.Tests
         string _assetSuffix;
         readonly List<string> _createdAssetPaths = new List<string>();
         string TimelinePath => $"{TestFolder}/Source_{_assetSuffix}.playable";
+        string UnrelatedTimelinePath => $"{TestFolder}/Unrelated_{_assetSuffix}.playable";
         string TempUserAssetPath => $"{PlayableTrackBakeSceneProcessor.TempFolder}/UserAsset_{_assetSuffix}.playable";
         string TempGeneratedAssetPath => $"{PlayableTrackBakeSceneProcessor.TempFolder}/Generated_{_assetSuffix}.playable";
 
@@ -49,6 +50,7 @@ namespace PlayableTrackBaking.Tests
             // テスト自身が作成した既知のアセットだけを削除する。固定フォルダ全体を消すと、
             // 利用者が同じ場所へ置いた無関係なアセットを巻き込むため削除してはならない。
             AssetDatabase.DeleteAsset(TimelinePath);
+            AssetDatabase.DeleteAsset(UnrelatedTimelinePath);
             AssetDatabase.DeleteAsset(TempUserAssetPath);
             AssetDatabase.DeleteAsset(TempGeneratedAssetPath);
             if (AssetDatabase.IsValidFolder(TestFolder) &&
@@ -168,6 +170,60 @@ namespace PlayableTrackBaking.Tests
                 "非破壊ベイクは元 Timeline の SignalEmitter を複製版へ差し替えてはならない");
             Assert.IsFalse(playableTrack.muted,
                 "非破壊ベイクは元 Timeline の PlayableTrack をミュートしてはならない");
+        }
+
+        [Test]
+        public void NonDestructiveBake_DoesNotRouteSignalFromUnrelatedTimelineWithSameLocalFileId()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            AssetDatabase.CreateAsset(timeline, TimelinePath);
+            timeline.CreateTrack<PlayableTrack>(null, "Custom Playable")
+                .CreateClip<SineMoveTestPlayableAsset>().duration = 1.0;
+            timeline.CreateMarkerTrack();
+            var emittedSignal = ScriptableObject.CreateInstance<SignalAsset>();
+            emittedSignal.name = "EmittedSignal";
+            AssetDatabase.AddObjectToAsset(emittedSignal, timeline);
+            timeline.markerTrack.CreateMarker<SignalEmitter>(0.5).asset = emittedSignal;
+
+            AssetDatabase.SaveAssets();
+            Assert.IsTrue(AssetDatabase.CopyAsset(TimelinePath, UnrelatedTimelinePath),
+                "CopyAsset は SignalAsset subasset の local file ID を保持する前提");
+            var unrelatedTimeline = AssetDatabase.LoadAssetAtPath<TimelineAsset>(UnrelatedTimelinePath);
+            var unrelatedSignal = AssetDatabase.LoadAllAssetsAtPath(UnrelatedTimelinePath)
+                .OfType<SignalAsset>()
+                .Single();
+            unrelatedSignal.name = "UnrelatedSignal";
+            Assert.IsTrue(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(
+                emittedSignal, out _, out long emittedId));
+            Assert.IsTrue(AssetDatabase.TryGetGUIDAndLocalFileIdentifier(
+                unrelatedSignal, out _, out long unrelatedId));
+            Assert.AreEqual(emittedId, unrelatedId,
+                "この回帰テストは異なる Timeline 間で local file ID が衝突する条件を必要とする");
+
+            _target = new GameObject("SignalEventHost");
+            _directorObject = new GameObject("SignalCollisionDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.director = director;
+            marker.recordRoots = new[] { _target };
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = _target;
+            marker.signalEventRoutes = new[] { new SignalEventRoute(unrelatedSignal, "OnWrongSignal") };
+
+            Assert.IsTrue(PlayableTrackBakeSceneProcessor.BakeNonDestructive(
+                director, new[] { marker }));
+
+            var clone = (TimelineAsset)director.playableAsset;
+            _createdAssetPaths.Add(AssetDatabase.GetAssetPath(clone));
+            var hostClip = clone.GetOutputTracks()
+                .OfType<AnimationTrack>()
+                .Where(PlayableTrackBakeCore.IsBakedTrackOwnedByTool)
+                .SelectMany(track => track.GetClips())
+                .Select(timelineClip => (timelineClip.asset as AnimationPlayableAsset)?.clip)
+                .Single(clip => clip != null);
+            Assert.IsEmpty(hostClip.events,
+                "別 Timeline の同一 local file ID を持つ Signal route を clone emitter に誤適用してはならない");
         }
 
         [Test]

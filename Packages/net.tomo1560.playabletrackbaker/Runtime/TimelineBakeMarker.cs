@@ -59,7 +59,7 @@ namespace PlayableTrackBaking
         [Tooltip("有効にすると、明示した SignalAsset-to-Udon event route を event host のベイク済み clip に SendCustomEvent AnimationEvent として追加する。Worlds 専用。")]
         public bool bakeSignalEvents = false;
 
-        [Tooltip("Signal AnimationEvent を載せる Record Root。常時有効で、この GameObject 上の UdonBehaviour が SendCustomEvent を受け取れる必要がある。")]
+        [Tooltip("Signal AnimationEvent を載せる Record Root。常時有効で、この GameObject 上のすべての UdonBehaviour に SendCustomEvent が broadcast される。単一の宛先だけに送る場合は、この GameObject 上の UdonBehaviour を1つだけにすること。")]
         public GameObject signalEventHost;
 
         [Tooltip("SignalAsset と event host の Udon custom event 名の対応。未登録 Signal は安全に無視される。")]
