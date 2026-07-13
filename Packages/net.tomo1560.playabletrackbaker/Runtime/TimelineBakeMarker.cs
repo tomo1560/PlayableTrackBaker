@@ -55,7 +55,7 @@ namespace PlayableTrackBaking
         [Tooltip("true: ベイク後に元の PlayableTrack を自動でミュートし、エディタプレビューと VRChat の挙動を一致させる")]
         public bool mutePlayableTracksAfterBake = true;
 
-        [Header("VRChat Worlds Signal PoC")]
+        [Header("VRChat Worlds Signal Events")]
         [Tooltip("有効にすると、明示した SignalAsset-to-Udon event route を event host のベイク済み clip に SendCustomEvent AnimationEvent として追加する。Worlds 専用。")]
         public bool bakeSignalEvents = false;
 

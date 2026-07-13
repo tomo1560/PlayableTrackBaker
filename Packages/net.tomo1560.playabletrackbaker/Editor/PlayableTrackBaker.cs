@@ -582,7 +582,7 @@ namespace PlayableTrackBaking
         }
 
         /// <summary>
-        /// Signal PoC を有効化した 1 つの marker について、指定 event host の生成 clip にだけ
+        /// Signal イベントベイクを有効化した 1 つの marker について、指定 event host の生成 clip にだけ
         /// UdonBehaviour.SendCustomEvent 用 AnimationEvent を加える。
         /// 複数 marker の設定を暗黙に混在させると宛先が曖昧になるため、同一 Director では 1 件に限定する。
         /// </summary>

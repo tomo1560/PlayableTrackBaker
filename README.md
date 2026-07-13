@@ -118,7 +118,7 @@ Packages/net.tomo1560.playabletrackbaker/
 
 VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前に**非破壊**の自動ベイクが走ります。開いているシーンや `.playable` アセットには一切変更が残らないため、手動ベイクした `[Baked]` トラックが残っていなくても、アップロードには自動で焼き込まれます。
 
-### SignalEmitter → Udon Event（Worlds PoC）
+### SignalEmitter → Udon Event（VRChat Worlds）
 
 `TimelineBakeMarker` の **Bake Signal Events** を有効にすると、指定した SignalAsset を event host の AnimationClip 上の `SendCustomEvent` AnimationEvent に変換できます。event host は Record Roots の一つで、常時有効かつ同じ GameObject に対象 UdonBehaviour がある必要があります。AnimationEvent は host 上の**すべての UdonBehaviour に broadcast** されるため、単一の宛先だけに送る必要がある場合は host に置く UdonBehaviour を1つだけにしてください。
 
@@ -233,7 +233,7 @@ VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前
 | 乱数・プレイヤー入力依存 | △ | ベイク時点の 1 回の再生が固定化される（決定論なら実質 OK） |
 | Audio | ✕ | AnimationClip で表現不可 |
 | Udon 変数操作・イベント | ✕ | 同上 |
-| SignalEmitter | △ | Worlds PoC: 明示 route のみ `SendCustomEvent` AnimationEvent へ変換可能。同期・途中再生等は非対応 |
+| SignalEmitter | △ | VRChat Worlds 専用: 明示 route のみ `SendCustomEvent` AnimationEvent へ変換可能。同期・途中再生等は非対応 |
 | その他のカスタムロジック | ✕ | コードそのものは焼けない（結果の Transform 変化だけ焼ける） |
 
 **まとめ:** 決定論的で Transform か animatable プロパティに落ちる動きであれば、`Frame Rate` を十分に取ることで目視で区別できないレベルまで精度を出せます。Particle・物理・Audio・Udon は精度の問題ではなく原理的に焼けないため、Particle のようにネイティブで動くものはベイクせず VRChat 側の再生に任せる構成が基本です。

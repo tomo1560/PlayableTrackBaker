@@ -10,7 +10,7 @@ namespace PlayableTrackBaking.Tests
 {
     /// <summary>
     /// SignalEmitter を VRChat Worlds 向けの Udon SendCustomEvent 呼び出しへ変換する
-    /// 最小 PoC の契約を固定する。SignalEmitter は Clip ではなく Marker なので、
+    /// 契約を固定する。SignalEmitter は Clip ではなく Marker なので、
     /// SignalTrack と TimelineAsset.markerTrack の両方を明示的に対象とする。
     /// </summary>
     [TestFixture]
