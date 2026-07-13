@@ -1,0 +1,8 @@
+{
+  "name": "GAIALyricsMovie.Runtime",
+  "rootNamespace": "GAIALyricsMovie",
+  "references": [
+    "Unity.Timeline"
+  ],
+  "autoReferenced": true
+}

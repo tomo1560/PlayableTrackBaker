@@ -4,6 +4,9 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/GAIALyricsMovie/Scenes/GAIA_LyricsMovie.unity
+    guid: 135590e33c07cc8489f8d47aeb1c63ef
   m_configObjects:
     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: fd3662c0b9fcfc641aabc85e2522468b, type: 2}
