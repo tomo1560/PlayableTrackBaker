@@ -1,9 +1,24 @@
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.Timeline;
 using VRC.SDKBase;
 
 namespace PlayableTrackBaking
 {
+    /// <summary>SignalAsset と event host 上の Udon custom event 名の明示的な対応。</summary>
+    [System.Serializable]
+    public sealed class SignalEventRoute
+    {
+        public SignalAsset signal;
+        public string udonEventName;
+
+        public SignalEventRoute(SignalAsset signal, string udonEventName)
+        {
+            this.signal = signal;
+            this.udonEventName = udonEventName;
+        }
+    }
+
     /// <summary>
     /// PlayableTrack をベイクしたい PlayableDirector と同じオブジェクトに付けるマーカー。
     /// IEditorOnly を実装しているので、VRChat アップロード時にコンポーネント自体は自動除去される。
@@ -39,6 +54,16 @@ namespace PlayableTrackBaking
 
         [Tooltip("true: ベイク後に元の PlayableTrack を自動でミュートし、エディタプレビューと VRChat の挙動を一致させる")]
         public bool mutePlayableTracksAfterBake = true;
+
+        [Header("VRChat Worlds Signal PoC")]
+        [Tooltip("有効にすると、明示した SignalAsset-to-Udon event route を event host のベイク済み clip に SendCustomEvent AnimationEvent として追加する。Worlds 専用。")]
+        public bool bakeSignalEvents = false;
+
+        [Tooltip("Signal AnimationEvent を載せる Record Root。常時有効で、この GameObject 上の UdonBehaviour が SendCustomEvent を受け取れる必要がある。")]
+        public GameObject signalEventHost;
+
+        [Tooltip("SignalAsset と event host の Udon custom event 名の対応。未登録 Signal は安全に無視される。")]
+        public SignalEventRoute[] signalEventRoutes;
 
         void Reset()
         {

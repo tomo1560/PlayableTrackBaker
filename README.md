@@ -2,7 +2,7 @@
 
 VRChat ワールドのアップロード（Build & Publish）時に、Timeline の **PlayableTrack（カスタムトラック）の評価結果を AnimationClip に自動ベイク**し、AnimationTrack として同じ Timeline に追加するエディタ拡張です。
 
-VRChat ワールドでは Timeline 自体は動作しますが、PlayableTrack と SignalEmitter はカスタム C# コードに依存するため動作しません。このツールを使うと、エディタ上でカスタムトラックが生み出す動きをそのまま AnimationClip に焼き込み、VRChat 上でも再生できるようにします。
+VRChat ワールドでは Timeline 自体は動作しますが、カスタム C# に依存する PlayableTrack は動作しません。このツールを使うと、エディタ上でカスタムトラックが生み出す動きをそのまま AnimationClip に焼き込み、VRChat 上でも再生できるようにします。
 
 アバタープロジェクトでも、Timeline をオーサリングツールとして使う形で手動ベイクとゴースト比較プレビューを利用できます（自動ベイクはワールド専用。詳細は「[アバタープロジェクトでの利用](#アバタープロジェクトでの利用)」参照）。
 
@@ -115,6 +115,15 @@ Packages/net.tomo1560.playabletrackbaker/
 
 VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前に**非破壊**の自動ベイクが走ります。開いているシーンや `.playable` アセットには一切変更が残らないため、手動ベイクした `[Baked]` トラックが残っていなくても、アップロードには自動で焼き込まれます。
 
+### SignalEmitter → Udon Event（Worlds PoC）
+
+`TimelineBakeMarker` の **Bake Signal Events** を有効にすると、指定した SignalAsset を event host の AnimationClip 上の `SendCustomEvent` AnimationEvent に変換できます。event host は Record Roots の一つで、常時有効かつ同じ GameObject に対象 UdonBehaviour がある必要があります。
+
+- `Signal Event Routes` に SignalAsset と Udon custom event 名を明示対応付けします。未登録 Signal は無視されます。
+- AnimationEvent は host clip 1本だけに置かれるため、複数 Record Root でも二重発火しません。
+- **Worlds 専用・ローカル実行のみ**です。ネットワーク同期、途中参加、シーク／逆再生、`retroactive`、`emitOnce` の SignalEmitter 意味論は再現しません。
+- VRChat へアップロードする前に、Build & Test で UdonBehaviour の受信と発火順を確認してください。
+
 ## アバタープロジェクトでの利用
 
 アバタープロジェクトでは、**Timeline を「動きのオーサリングツール」として使い、その結果を `.anim` に書き出す**用途で利用できます。ワールドとはできることが異なります。
@@ -221,7 +230,8 @@ VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前
 | 乱数・プレイヤー入力依存 | △ | ベイク時点の 1 回の再生が固定化される（決定論なら実質 OK） |
 | Audio | ✕ | AnimationClip で表現不可 |
 | Udon 変数操作・イベント | ✕ | 同上 |
-| SignalEmitter／カスタムロジック | ✕ | コードそのものは焼けない（結果の Transform 変化だけ焼ける） |
+| SignalEmitter | △ | Worlds PoC: 明示 route のみ `SendCustomEvent` AnimationEvent へ変換可能。同期・途中再生等は非対応 |
+| その他のカスタムロジック | ✕ | コードそのものは焼けない（結果の Transform 変化だけ焼ける） |
 
 **まとめ:** 決定論的で Transform か animatable プロパティに落ちる動きであれば、`Frame Rate` を十分に取ることで目視で区別できないレベルまで精度を出せます。Particle・物理・Audio・Udon は精度の問題ではなく原理的に焼けないため、Particle のようにネイティブで動くものはベイクせず VRChat 側の再生に任せる構成が基本です。
 

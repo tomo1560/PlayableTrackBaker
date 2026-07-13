@@ -577,6 +577,59 @@ namespace PlayableTrackBaking
             }
         }
 
+        /// <summary>
+        /// Signal PoC を有効化した 1 つの marker について、指定 event host の生成 clip にだけ
+        /// UdonBehaviour.SendCustomEvent 用 AnimationEvent を加える。
+        /// 複数 marker の設定を暗黙に混在させると宛先が曖昧になるため、同一 Director では 1 件に限定する。
+        /// </summary>
+        internal static int AddConfiguredSignalEvents(
+            TimelineAsset timeline,
+            List<(AnimationClip clip, GameObject root)> recorded,
+            IEnumerable<TimelineBakeMarker> markers)
+        {
+            var enabledMarkers = markers
+                .Where(marker => marker != null && marker.bakeSignalEvents)
+                .ToList();
+            if (enabledMarkers.Count == 0)
+                return 0;
+            if (enabledMarkers.Count > 1)
+                throw new System.InvalidOperationException(
+                    "[PlayableTrackBaker] 同じ PlayableDirector では Signal Event Bake を有効にできる TimelineBakeMarker は 1 つだけです。");
+
+            var marker = enabledMarkers[0];
+            if (marker.signalEventHost == null)
+                throw new System.InvalidOperationException(
+                    $"[PlayableTrackBaker] {marker.name}: Signal Event Host を Record Roots のいずれかに指定してください。");
+
+            var eventHostClips = recorded
+                .Where(result => result.root == marker.signalEventHost)
+                .Select(result => result.clip)
+                .Where(clip => clip != null)
+                .Distinct()
+                .ToList();
+            if (eventHostClips.Count != 1)
+                throw new System.InvalidOperationException(
+                    $"[PlayableTrackBaker] {marker.name}: Signal Event Host は Record Roots に一度だけ含める必要があります。");
+
+            int count = TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                timeline, eventHostClips[0], marker.signalEventRoutes);
+            if (count > 0)
+                EnsureEventHostTrackCoversTimeline(timeline, eventHostClips[0]);
+            return count;
+        }
+
+        static void EnsureEventHostTrackCoversTimeline(TimelineAsset timeline, AnimationClip eventHost)
+        {
+            foreach (var track in timeline.GetOutputTracks().OfType<AnimationTrack>())
+            {
+                foreach (var timelineClip in track.GetClips())
+                {
+                    if (timelineClip.asset is AnimationPlayableAsset asset && asset.clip == eventHost)
+                        timelineClip.duration = System.Math.Max(timelineClip.duration, timeline.duration);
+                }
+            }
+        }
+
         public static void EnsureFolder()
         {
             if (!AssetDatabase.IsValidFolder(OutputFolder))
@@ -830,13 +883,15 @@ namespace PlayableTrackBaking
                 }
 
                 PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks, true);
+                int signalEvents = PlayableTrackBakeCore.AddConfiguredSignalEvents(
+                    timeline, recorded, validMarkers);
                 if (recorded.Count > 0)
                 {
                     var reports = recorded.Select(x => AnimationClipPerformanceAnalyzer.Analyze(x.clip));
                     long keys = reports.Sum(report => (long)report.TotalKeyCount);
                     long bytes = reports.Sum(report => report.EstimatedSizeBytes);
                     Debug.Log($"[PlayableTrackBaker] {director.name}: ベイク結果 {recorded.Count} clip、" +
-                        $"推定キー数 {keys:N0}、推定サイズ {bytes:N0} B", director);
+                        $"推定キー数 {keys:N0}、推定サイズ {bytes:N0} B、Signal Event {signalEvents} 件", director);
                 }
                 BakeDestructiveFailureInjection?.Invoke();
                 succeeded = true;
@@ -1008,6 +1063,7 @@ namespace PlayableTrackBaking
                     AssetDatabase.AddObjectToAsset(clip, clone);
 
                 PlayableTrackBakeCore.AddBakedTracks(director, clone, recorded, true);
+                PlayableTrackBakeCore.AddConfiguredSignalEvents(clone, recorded, validMarkers);
 
                 EditorUtility.SetDirty(clone);
                 EditorUtility.SetDirty(director);

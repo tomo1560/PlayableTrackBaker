@@ -2,7 +2,8 @@
     "name": "net.tomo1560.playabletrackbaker.Runtime",
     "rootNamespace": "PlayableTrackBaking",
     "references": [
-        "VRC.SDKBase"
+        "VRC.SDKBase",
+        "Unity.Timeline"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
