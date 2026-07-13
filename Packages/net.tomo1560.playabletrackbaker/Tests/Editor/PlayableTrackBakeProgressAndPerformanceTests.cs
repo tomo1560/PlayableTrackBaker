@@ -43,6 +43,22 @@ namespace PlayableTrackBaking.Tests
                 AssetDatabase.FindAssets(string.Empty, new[] { TestFolder }).Length == 0)
                 AssetDatabase.DeleteAsset(TestFolder);
             AssetDatabase.Refresh();
+            DestroyLeakedTestObjects();
+        }
+
+        static void DestroyLeakedTestObjects()
+        {
+            // Resources.FindObjectsOfTypeAll は Test Runner の解放済み一時 scene も返し得るため
+            // 使わない。既知の active test object だけを対象にする。
+            foreach (var name in new[]
+                     {
+                         "ProgressTarget_First", "ProgressTarget_Second", "ProgressTarget_RecordCancellation"
+                     })
+            {
+                var testObject = GameObject.Find(name);
+                if (testObject != null)
+                    UnityEngine.Object.DestroyImmediate(testObject);
+            }
         }
 
         [Test]

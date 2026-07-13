@@ -121,7 +121,7 @@ VRChat SDK の **Build & Publish** を実行するだけです。ビルド直前
 
 - `Signal Event Routes` に SignalAsset と Udon custom event 名を明示対応付けします。未登録 Signal は無視されます。
 - AnimationEvent は host clip 1本だけに置かれるため、複数 Record Root でも二重発火しません。
-- **Worlds 専用・ローカル実行のみ**です。ネットワーク同期、途中参加、シーク／逆再生、`retroactive`、`emitOnce` の SignalEmitter 意味論は再現しません。
+- **Worlds 専用・ローカル実行のみ**です。ネットワーク同期、途中参加、シーク／逆再生は再現しません。`retroactive` または `emitOnce` が有効な route 対象 SignalEmitter は、安全な等価変換ができないためベイクを拒否します。
 - VRChat へアップロードする前に、Build & Test で UdonBehaviour の受信と発火順を確認してください。
 
 ## アバタープロジェクトでの利用

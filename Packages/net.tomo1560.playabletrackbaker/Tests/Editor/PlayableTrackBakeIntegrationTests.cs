@@ -55,6 +55,19 @@ namespace PlayableTrackBaking.Tests
                 AssetDatabase.FindAssets(string.Empty, new[] { TestFolder }).Length == 0)
                 AssetDatabase.DeleteAsset(TestFolder);
             AssetDatabase.Refresh();
+            DestroyLeakedTestObjects();
+        }
+
+        // NUnit の途中中断や Unity の例外でフィールド参照が失われた場合にも、検証シーンへ
+        // テスト用 GameObject を残さないための最後の安全網。利用者オブジェクトには触れない。
+        static void DestroyLeakedTestObjects()
+        {
+            foreach (var name in new[] { "RunBakeTarget", "RunBakeSuccessDirector" })
+            {
+                var testObject = GameObject.Find(name);
+                if (testObject != null)
+                    Object.DestroyImmediate(testObject);
+            }
         }
 
         [Test]
@@ -142,7 +155,7 @@ namespace PlayableTrackBaking.Tests
                 .Where(PlayableTrackBakeCore.IsBakedTrackOwnedByTool)
                 .SelectMany(track => track.GetClips())
                 .Select(timelineClip => (timelineClip.asset as AnimationPlayableAsset)?.clip)
-                .Single(clip => clip != null && clip.name.EndsWith(_target.name));
+                .Single(clip => clip != null);
             var events = hostClip.events;
             Assert.AreEqual(1, events.Length);
             Assert.AreEqual(0.75f, events[0].time, 0.0001f);

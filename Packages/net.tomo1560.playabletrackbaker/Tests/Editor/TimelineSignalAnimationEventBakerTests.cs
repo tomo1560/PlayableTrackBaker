@@ -78,6 +78,31 @@ namespace PlayableTrackBaking.Tests
                 "無効な event host を渡した場合、clip を部分的に変更してはならない");
         }
 
+        [TestCase(true, false, "retroactive")]
+        [TestCase(false, true, "emitOnce")]
+        public void AddRoutedSignalEvents_RejectsSignalEmitterSemanticsThatCannotBeRepresentedByAnimationEvents(
+            bool retroactive,
+            bool emitOnce,
+            string unsupportedSetting)
+        {
+            var timeline = CreateTimeline();
+            var signal = CreateSignal("OpenDoor");
+            var emitter = CreateEmitter(timeline.markerTrack, 0.25, signal);
+            emitter.retroactive = retroactive;
+            emitter.emitOnce = emitOnce;
+            var eventHost = CreateHostClip(timeline, "Event Host");
+
+            var exception = Assert.Throws<NotSupportedException>(() =>
+                TimelineSignalAnimationEventBaker.AddRoutedSignalEvents(
+                    timeline,
+                    eventHost,
+                    new[] { new SignalEventRoute(signal, "OnOpenDoor") }));
+
+            StringAssert.Contains(unsupportedSetting, exception.Message);
+            Assert.IsEmpty(eventHost.events,
+                "AnimationEvent で同等に再現できない SignalEmitter 設定では、部分的なイベント出力を残してはならない");
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public void AddConfiguredSignalEvents_MissingOrUnrecordedHostLeavesTimelineUntouched(bool missingHost)

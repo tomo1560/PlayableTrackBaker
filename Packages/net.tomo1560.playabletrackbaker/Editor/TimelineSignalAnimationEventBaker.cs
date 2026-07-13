@@ -30,10 +30,23 @@ namespace PlayableTrackBaking
                 .Where(route => route != null && route.signal != null && !string.IsNullOrWhiteSpace(route.udonEventName))
                 .ToList();
 
-            var routedEvents = EnumerateSignalEmitters(timeline)
+            var routedEmitters = EnumerateSignalEmitters(timeline)
                 .Select(emitter => (emitter, route: FindRoute(timeline, emitter.asset, validRoutes)))
                 .Where(item => item.route != null)
                 .OrderBy(item => item.emitter.time)
+                .ToList();
+
+            foreach (var item in routedEmitters)
+            {
+                if (item.emitter.retroactive)
+                    throw new NotSupportedException(
+                        "SignalEmitter.retroactive は AnimationEvent へ安全に変換できません。無効にするか Udon 側で再生開始時の状態を処理してください。");
+                if (item.emitter.emitOnce)
+                    throw new NotSupportedException(
+                        "SignalEmitter.emitOnce は AnimationEvent へ安全に変換できません。無効にするか Udon 側でループ時の重複を抑止してください。");
+            }
+
+            var routedEvents = routedEmitters
                 .Select(item => new AnimationEvent
                 {
                     time = (float)item.emitter.time,

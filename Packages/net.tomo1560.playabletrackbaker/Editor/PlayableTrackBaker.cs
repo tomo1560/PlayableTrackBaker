@@ -513,8 +513,9 @@ namespace PlayableTrackBaking
                 return false;
             return track.GetClips().Any(clip =>
                 clip.asset is AnimationPlayableAsset animationAsset &&
-                animationAsset.clip != null &&
-                animationAsset.clip.name.StartsWith(OwnershipSignature, System.StringComparison.Ordinal));
+                (animationAsset.name.StartsWith(OwnershipSignature, System.StringComparison.Ordinal) ||
+                 (animationAsset.clip != null && animationAsset.clip.name.StartsWith(
+                     OwnershipSignature, System.StringComparison.Ordinal))));
         }
 
         /// <summary>
@@ -557,13 +558,16 @@ namespace PlayableTrackBaking
                         ? Undo.AddComponent<Animator>(root)
                         : root.AddComponent<Animator>();
 
-                clip.name = OwnershipSignature + root.name;
                 var track = timeline.CreateTrack<AnimationTrack>(null, $"{BakedTrackPrefix} {root.name}");
                 if (registerUndo)
                     Undo.RegisterCreatedObjectUndo(track, "Create Baked Track");
                 track.trackOffset = TrackOffset.ApplySceneOffsets;
                 var tlClip = track.CreateClip(clip);
-                // 再ベイク時に「本ツールの生成物」と識別するための直列化される目印（IsBakedTrackOwnedByTool が参照）
+                // clip 自体の名前を変えると、永続 AnimationClip の main object 名とファイル名が
+                // 不一致になり Unity が警告する。Timeline 内の AnimationPlayableAsset に署名を置く。
+                if (tlClip.asset is AnimationPlayableAsset animationAsset)
+                    animationAsset.name = OwnershipSignature + root.name;
+                // 表示名はユーザーが Timeline 上で識別しやすい値を保つ。
                 tlClip.displayName = $"{BakedTrackPrefix} {root.name}";
                 tlClip.start = 0;
                 tlClip.duration = clip.length;
