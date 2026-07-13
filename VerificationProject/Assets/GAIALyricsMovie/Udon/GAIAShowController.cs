@@ -106,6 +106,23 @@ namespace GAIALyricsMovie
             director.time = elapsed;
             director.Play();
             ResyncSignals((float)elapsed);
+            // 再構築したグラフは最初の評価で[0, elapsed]のベイク済みAnimationEventを一括再生し、
+            // beaconFireCount等の内部カウンタを二重加算するため、数フレーム後に改めて正規化する。
+            SendCustomEventDelayedFrames(nameof(_PostSeekResync), 3);
+        }
+
+        /// <summary>シーク直後のAnimationEvent一括再生が終わった後に、演出状態を経過秒へ正規化する。</summary>
+        public void _PostSeekResync()
+        {
+            if (director == null || !showStarted)
+                return;
+
+            double elapsed = Networking.GetServerTimeInSeconds() - showStartServerTime;
+            if (elapsed < 0d)
+                elapsed = 0d;
+            if (elapsed > songDuration)
+                elapsed = songDuration;
+            ResyncSignals((float)elapsed);
         }
 
         void FinishShow(float elapsedSeconds)

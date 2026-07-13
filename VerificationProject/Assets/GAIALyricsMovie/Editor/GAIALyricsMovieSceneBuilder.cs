@@ -37,8 +37,14 @@ namespace GAIALyricsMovie.Editor
         const string ShowControllerProgramPath = SampleRoot + "/Udon/GAIAShowController.asset";
         const string PlayButtonInteractText = "Start GAIA Show";
         const double SongDuration = 221.504d;
+        const double IntroSparkSignalTime = 12.5d;
         const double ChorusSignalTime = 56.52d;
+        const double RapidPulseASignalTime = 100.0d;
+        const double RapidPulseBSignalTime = 100.4d;
+        const double BridgeDimSignalTime = 130.0d;
         const double FinaleSignalTime = 153.24d;
+        const double OutroFadeSignalTime = 210.0d;
+        static readonly double[] VerseBeaconSignalTimes = { 30.0d, 90.0d, 120.0d };
         const string OwnedBakeLabel = "GAIALyricsMovie.OwnedBake.v1";
 
         static readonly Color DeepNavy = new Color(0.008f, 0.012f, 0.04f, 1f);
@@ -94,10 +100,11 @@ namespace GAIALyricsMovie.Editor
             GameObject worldRoot = new GameObject("GAIA Lyrics Movie World");
             CreateWorldDescriptor(worldRoot.transform);
             CreateArchitecture(worldRoot.transform, floorMaterial, cyanMaterial, magentaMaterial);
-            Transform visualsRoot = CreateVisuals(worldRoot.transform, torusMesh, cyanMaterial, magentaMaterial, violetMaterial);
+            Transform visualsRoot = CreateVisuals(
+                worldRoot.transform, torusMesh, floorMaterial, cyanMaterial, magentaMaterial, violetMaterial);
             Transform lyricsRoot = CreateLyrics(worldRoot.transform, japaneseFont, cues);
             SignalEffects signalEffects = CreateSignalEffects(
-                worldRoot.transform, torusMesh, cyanMaterial, magentaMaterial);
+                worldRoot.transform, torusMesh, cyanMaterial, magentaMaterial, floorMaterial);
             CreateStarField(worldRoot.transform, starMaterial);
             CreateInformationTypography(worldRoot.transform, japaneseFont);
 
@@ -136,11 +143,31 @@ namespace GAIALyricsMovie.Editor
         {
             public readonly GameObject ChorusHalo;
             public readonly GameObject FinaleBloom;
+            public readonly GameObject IntroSparkShards;
+            public readonly GameObject[] BeaconSegments;
+            public readonly GameObject RapidTwinA;
+            public readonly GameObject RapidTwinB;
+            public readonly GameObject BridgeVeil;
+            public readonly GameObject OutroRing;
 
-            public SignalEffects(GameObject chorusHalo, GameObject finaleBloom)
+            public SignalEffects(
+                GameObject chorusHalo,
+                GameObject finaleBloom,
+                GameObject introSparkShards,
+                GameObject[] beaconSegments,
+                GameObject rapidTwinA,
+                GameObject rapidTwinB,
+                GameObject bridgeVeil,
+                GameObject outroRing)
             {
                 ChorusHalo = chorusHalo;
                 FinaleBloom = finaleBloom;
+                IntroSparkShards = introSparkShards;
+                BeaconSegments = beaconSegments;
+                RapidTwinA = rapidTwinA;
+                RapidTwinB = rapidTwinB;
+                BridgeVeil = bridgeVeil;
+                OutroRing = outroRing;
             }
         }
 
@@ -327,7 +354,8 @@ namespace GAIALyricsMovie.Editor
             UnityEngine.Object.DestroyImmediate(horizon.GetComponent<Collider>());
         }
 
-        static Transform CreateVisuals(Transform parent, Mesh torus, Material cyan, Material magenta, Material violet)
+        static Transform CreateVisuals(
+            Transform parent, Mesh torus, Material floor, Material cyan, Material magenta, Material violet)
         {
             var root = new GameObject("Baked Visuals").transform;
             root.SetParent(parent, false);
@@ -374,14 +402,199 @@ namespace GAIALyricsMovie.Editor
                 UnityEngine.Object.DestroyImmediate(shard.GetComponent<Collider>());
             }
 
+            Transform probes = CreateLayer("Fidelity Probes", root);
+            // Baked Visuals(y4.1 / z17)から見て、スポーン(0, 0.05, -9)寄りの低いアーチへ
+            // 配置し直す(ワールド座標でおよそ y2.1 / z7)。このレイヤー自身はAnimateVisualsの
+            // 汎用フォーミュラの対象外で、常に静止したまま子ステーションだけが個別に動く。
+            probes.localPosition = new Vector3(0f, -2f, -10f);
+            CreateFidelityProbes(probes, floor, cyan, magenta, violet);
+
             return root;
+        }
+
+        /// <summary>
+        /// PlayableTrackのベイク忠実度を目視確認するための7ステーション。
+        /// GaiaLyricsPlayableBehaviour.AnimateProbesが名前引きする子階層と構造・命名を一致させること。
+        /// </summary>
+        static void CreateFidelityProbes(Transform probesRoot, Material floor, Material cyan, Material magenta, Material violet)
+        {
+            const int stationCount = 7;
+            for (int index = 0; index < stationCount; index++)
+            {
+                float x = -7f + index * (14f / (stationCount - 1));
+                switch (index)
+                {
+                    case 0:
+                        CreateCometCircuitProbe(probesRoot, x, floor, cyan);
+                        break;
+                    case 1:
+                        CreateDriftMonolithProbe(probesRoot, x, floor, violet, magenta);
+                        break;
+                    case 2:
+                        CreateGyroSpinnerProbe(probesRoot, x, floor, cyan);
+                        break;
+                    case 3:
+                        CreateTeleportBeaconsProbe(probesRoot, x, floor, violet, cyan);
+                        break;
+                    case 4:
+                        CreateOrbitPairProbe(probesRoot, x, floor, cyan, magenta);
+                        break;
+                    case 5:
+                        CreatePhaseChoirProbe(probesRoot, x, floor, cyan, magenta);
+                        break;
+                    case 6:
+                        CreateScaleBeatProbe(probesRoot, x, floor, magenta);
+                        break;
+                }
+            }
+        }
+
+        static GameObject CreateProbePedestal(Transform station, Material floor)
+        {
+            // 常に動かない静的ペデスタル: ベイクが非アニメーションのTransformに誤差を
+            // 生まないことを見比べるための基準になる。
+            GameObject pedestal = CreatePrimitive("Pedestal", PrimitiveType.Cylinder, station);
+            pedestal.transform.localPosition = new Vector3(0f, -0.3f, 0f);
+            pedestal.transform.localScale = new Vector3(0.4f, 0.05f, 0.4f);
+            pedestal.GetComponent<Renderer>().sharedMaterial = floor;
+            UnityEngine.Object.DestroyImmediate(pedestal.GetComponent<Collider>());
+            return pedestal;
+        }
+
+        static void CreateCometCircuitProbe(Transform probesRoot, float x, Material floor, Material cyan)
+        {
+            Transform station = CreateLayer("Comet Circuit", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            GameObject comet = CreatePrimitive("Comet", PrimitiveType.Sphere, station);
+            comet.transform.localScale = Vector3.one * 0.18f;
+            comet.GetComponent<Renderer>().sharedMaterial = cyan;
+            UnityEngine.Object.DestroyImmediate(comet.GetComponent<Collider>());
+        }
+
+        static void CreateDriftMonolithProbe(Transform probesRoot, float x, Material floor, Material violet, Material magenta)
+        {
+            Transform station = CreateLayer("Drift Monolith", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            GameObject monolith = CreatePrimitive("Monolith", PrimitiveType.Cube, station);
+            monolith.transform.localPosition = new Vector3(-0.3f, 0.5f, 0f);
+            monolith.transform.localScale = new Vector3(0.16f, 0.55f, 0.05f);
+            monolith.GetComponent<Renderer>().sharedMaterial = violet;
+            UnityEngine.Object.DestroyImmediate(monolith.GetComponent<Collider>());
+
+            // 同じ形の分身を100倍振幅で動かし、微小ドリフトがベイクで消えていないかの比較基準にする。
+            GameObject referenceTwin = CreatePrimitive("Reference Twin", PrimitiveType.Cube, station);
+            referenceTwin.transform.localPosition = new Vector3(0.3f, 0.5f, 0f);
+            referenceTwin.transform.localScale = new Vector3(0.16f, 0.55f, 0.05f);
+            referenceTwin.GetComponent<Renderer>().sharedMaterial = magenta;
+            UnityEngine.Object.DestroyImmediate(referenceTwin.GetComponent<Collider>());
+        }
+
+        static void CreateGyroSpinnerProbe(Transform probesRoot, float x, Material floor, Material cyan)
+        {
+            Transform station = CreateLayer("Gyro Spinner", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            GameObject cube = CreatePrimitive("Spinner Cube", PrimitiveType.Cube, station);
+            cube.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+            cube.transform.localScale = Vector3.one * 0.32f;
+            cube.GetComponent<Renderer>().sharedMaterial = cyan;
+            UnityEngine.Object.DestroyImmediate(cube.GetComponent<Collider>());
+        }
+
+        // GaiaLyricsPlayableBehaviour.TeleportSlotLocalPositionsと同じ値にすること
+        // (見た目のスロット目印とビーコンの瞬間移動先を一致させるため)。
+        static readonly Vector3[] TeleportSlotLocalPositions =
+        {
+            new Vector3(-0.6f, 0.4f, 0f),
+            new Vector3(-0.2f, 0.4f, 0f),
+            new Vector3(0.2f, 0.4f, 0f),
+            new Vector3(0.6f, 0.4f, 0f),
+        };
+
+        static void CreateTeleportBeaconsProbe(Transform probesRoot, float x, Material floor, Material violet, Material cyan)
+        {
+            Transform station = CreateLayer("Teleport Beacons", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+
+            for (int slot = 0; slot < TeleportSlotLocalPositions.Length; slot++)
+            {
+                GameObject marker = CreatePrimitive($"Slot {slot + 1}", PrimitiveType.Cylinder, station);
+                marker.transform.localPosition = TeleportSlotLocalPositions[slot] + new Vector3(0f, -0.25f, 0f);
+                marker.transform.localScale = new Vector3(0.14f, 0.04f, 0.14f);
+                marker.GetComponent<Renderer>().sharedMaterial = violet;
+                UnityEngine.Object.DestroyImmediate(marker.GetComponent<Collider>());
+            }
+
+            GameObject beacon = CreatePrimitive("Beacon Sphere", PrimitiveType.Sphere, station);
+            beacon.transform.localPosition = TeleportSlotLocalPositions[0];
+            beacon.transform.localScale = Vector3.one * 0.2f;
+            beacon.GetComponent<Renderer>().sharedMaterial = cyan;
+            UnityEngine.Object.DestroyImmediate(beacon.GetComponent<Collider>());
+        }
+
+        static void CreateOrbitPairProbe(Transform probesRoot, float x, Material floor, Material cyan, Material magenta)
+        {
+            Transform station = CreateLayer("Orbit Pair", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            // Armは非一様スケールの視覚メッシュを持たない中継Transform(スケール1のまま回転のみ)。
+            // 子の描画メッシュへ歪んだスケールが継承されるのを避ける。
+            Transform arm = CreateLayer("Arm", station);
+            arm.localPosition = new Vector3(0f, 0.6f, 0f);
+
+            GameObject armBar = CreatePrimitive("Arm Bar", PrimitiveType.Cube, arm);
+            armBar.transform.localPosition = new Vector3(0.35f, 0f, 0f);
+            armBar.transform.localScale = new Vector3(0.7f, 0.05f, 0.05f);
+            armBar.GetComponent<Renderer>().sharedMaterial = cyan;
+            UnityEngine.Object.DestroyImmediate(armBar.GetComponent<Collider>());
+
+            GameObject counter = CreatePrimitive("Counter", PrimitiveType.Sphere, arm);
+            counter.transform.localPosition = new Vector3(0.7f, 0f, 0f);
+            counter.transform.localScale = Vector3.one * 0.2f;
+            counter.GetComponent<Renderer>().sharedMaterial = magenta;
+            UnityEngine.Object.DestroyImmediate(counter.GetComponent<Collider>());
+        }
+
+        static void CreatePhaseChoirProbe(Transform probesRoot, float x, Material floor, Material cyan, Material magenta)
+        {
+            Transform station = CreateLayer("Phase Choir", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            for (int pillarIndex = 0; pillarIndex < 8; pillarIndex++)
+            {
+                GameObject pillar = CreatePrimitive($"Pillar {pillarIndex + 1}", PrimitiveType.Cube, station);
+                pillar.transform.localPosition = new Vector3(-0.7f + pillarIndex * 0.2f, 0f, 0f);
+                pillar.transform.localScale = new Vector3(0.09f, 1f, 0.09f);
+                pillar.GetComponent<Renderer>().sharedMaterial = pillarIndex % 2 == 0 ? cyan : magenta;
+                UnityEngine.Object.DestroyImmediate(pillar.GetComponent<Collider>());
+            }
+        }
+
+        static void CreateScaleBeatProbe(Transform probesRoot, float x, Material floor, Material magenta)
+        {
+            Transform station = CreateLayer("Scale Beat", probesRoot);
+            station.localPosition = new Vector3(x, 0f, 0f);
+            CreateProbePedestal(station, floor);
+
+            GameObject beatCube = CreatePrimitive("Beat Cube", PrimitiveType.Cube, station);
+            beatCube.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+            beatCube.GetComponent<Renderer>().sharedMaterial = magenta;
+            UnityEngine.Object.DestroyImmediate(beatCube.GetComponent<Collider>());
         }
 
         static SignalEffects CreateSignalEffects(
             Transform parent,
             Mesh torus,
             Material cyan,
-            Material magenta)
+            Material magenta,
+            Material floor)
         {
             Transform root = CreateLayer("Signal Effects", parent);
             root.position = new Vector3(0f, 4.1f, 16.5f);
@@ -400,7 +613,91 @@ namespace GAIALyricsMovie.Editor
             UnityEngine.Object.DestroyImmediate(finaleBloom.GetComponent<Collider>());
             finaleBloom.SetActive(false);
 
-            return new SignalEffects(chorusHalo, finaleBloom);
+            GameObject introSparkShards = CreateIntroSparkShards(root, cyan);
+            GameObject[] beaconSegments = CreateVerseBeaconTower(root, cyan, magenta);
+            GameObject rapidTwinA = CreateRapidTwin("Rapid Twin A", root, cyan, new Vector3(-1.2f, 0f, 0f));
+            GameObject rapidTwinB = CreateRapidTwin("Rapid Twin B", root, magenta, new Vector3(1.2f, 0f, 0f));
+            GameObject bridgeVeil = CreateBridgeVeil(root, floor);
+            GameObject outroRing = CreateOutroRing(root, torus, magenta);
+
+            return new SignalEffects(
+                chorusHalo, finaleBloom, introSparkShards, beaconSegments,
+                rapidTwinA, rapidTwinB, bridgeVeil, outroRing);
+        }
+
+        static GameObject CreateIntroSparkShards(Transform root, Material cyan)
+        {
+            var cluster = new GameObject("Intro Spark Shards");
+            cluster.transform.SetParent(root, false);
+            cluster.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+            for (int index = 0; index < 5; index++)
+            {
+                float angle = index / 5f * Mathf.PI * 2f;
+                GameObject shard = CreatePrimitive($"Spark Shard {index + 1}", PrimitiveType.Cube, cluster.transform);
+                shard.transform.localPosition = new Vector3(Mathf.Cos(angle) * 0.6f, Mathf.Sin(angle) * 0.6f, 0f);
+                shard.transform.localScale = new Vector3(0.08f, 0.3f, 0.08f);
+                shard.transform.localRotation = Quaternion.Euler(0f, 0f, angle * Mathf.Rad2Deg);
+                shard.GetComponent<Renderer>().sharedMaterial = cyan;
+                UnityEngine.Object.DestroyImmediate(shard.GetComponent<Collider>());
+            }
+
+            cluster.SetActive(false);
+            return cluster;
+        }
+
+        static GameObject[] CreateVerseBeaconTower(Transform root, Material cyan, Material magenta)
+        {
+            var tower = new GameObject("Verse Beacon Tower");
+            tower.transform.SetParent(root, false);
+            tower.transform.localPosition = new Vector3(-3.5f, 0f, 0f);
+
+            var segments = new GameObject[3];
+            for (int index = 0; index < segments.Length; index++)
+            {
+                GameObject segment = CreatePrimitive($"Beacon Segment {index + 1}", PrimitiveType.Cylinder, tower.transform);
+                segment.transform.localPosition = new Vector3(0f, index * 0.6f, 0f);
+                segment.transform.localScale = new Vector3(0.3f, 0.28f, 0.3f);
+                segment.GetComponent<Renderer>().sharedMaterial = index % 2 == 0 ? cyan : magenta;
+                UnityEngine.Object.DestroyImmediate(segment.GetComponent<Collider>());
+                segment.SetActive(false);
+                segments[index] = segment;
+            }
+
+            return segments;
+        }
+
+        static GameObject CreateRapidTwin(string name, Transform root, Material material, Vector3 localPosition)
+        {
+            GameObject twin = CreatePrimitive(name, PrimitiveType.Sphere, root);
+            twin.transform.localPosition = localPosition + new Vector3(0f, 2.5f, 0f);
+            twin.transform.localScale = Vector3.one * 0.4f;
+            twin.GetComponent<Renderer>().sharedMaterial = material;
+            UnityEngine.Object.DestroyImmediate(twin.GetComponent<Collider>());
+            twin.SetActive(false);
+            return twin;
+        }
+
+        static GameObject CreateBridgeVeil(Transform root, Material floor)
+        {
+            GameObject veil = CreatePrimitive("Bridge Veil", PrimitiveType.Cube, root);
+            veil.transform.localPosition = new Vector3(0f, 3f, 6f);
+            veil.transform.localScale = new Vector3(16f, 8f, 0.4f);
+            veil.GetComponent<Renderer>().sharedMaterial = floor;
+            UnityEngine.Object.DestroyImmediate(veil.GetComponent<Collider>());
+            veil.SetActive(false);
+            return veil;
+        }
+
+        static GameObject CreateOutroRing(Transform root, Mesh torus, Material magenta)
+        {
+            var ring = new GameObject("Outro Ring");
+            ring.transform.SetParent(root, false);
+            ring.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+            ring.transform.localScale = Vector3.one * 6.5f;
+            ring.AddComponent<MeshFilter>().sharedMesh = torus;
+            ring.AddComponent<MeshRenderer>().sharedMaterial = magenta;
+            ring.SetActive(false);
+            return ring;
         }
 
         static Transform CreateLyrics(Transform parent, Font font, IReadOnlyList<LyricCue> cues)
@@ -492,22 +789,53 @@ namespace GAIALyricsMovie.Editor
             BindReference(director, ref playableAsset.lyricsRoot, lyricsRoot);
             BindReference(director, ref playableAsset.visualRoot, visualsRoot);
 
+            SignalAsset introSparkSignal = CreateSignalAsset(timeline, "GAIA Intro Spark");
+            SignalAsset verseBeaconSignal = CreateSignalAsset(timeline, "GAIA Verse Beacon");
             SignalAsset chorusSignal = CreateSignalAsset(timeline, "GAIA Chorus Pulse");
+            SignalAsset rapidPulseASignal = CreateSignalAsset(timeline, "GAIA Rapid Pulse A");
+            SignalAsset rapidPulseBSignal = CreateSignalAsset(timeline, "GAIA Rapid Pulse B");
+            SignalAsset bridgeDimSignal = CreateSignalAsset(timeline, "GAIA Bridge Dim");
             SignalAsset finaleSignal = CreateSignalAsset(timeline, "GAIA Finale Bloom");
+            SignalAsset outroFadeSignal = CreateSignalAsset(timeline, "GAIA Outro Fade");
             timeline.CreateMarkerTrack();
             timeline.markerTrack.name = "GAIA Signal Cues";
+            CreateSignalEmitter(timeline.markerTrack, IntroSparkSignalTime, introSparkSignal);
+            foreach (double beaconTime in VerseBeaconSignalTimes)
+                CreateSignalEmitter(timeline.markerTrack, beaconTime, verseBeaconSignal);
             CreateSignalEmitter(timeline.markerTrack, ChorusSignalTime, chorusSignal);
+            CreateSignalEmitter(timeline.markerTrack, RapidPulseASignalTime, rapidPulseASignal);
+            CreateSignalEmitter(timeline.markerTrack, RapidPulseBSignalTime, rapidPulseBSignal);
+            CreateSignalEmitter(timeline.markerTrack, BridgeDimSignalTime, bridgeDimSignal);
             CreateSignalEmitter(timeline.markerTrack, FinaleSignalTime, finaleSignal);
+            CreateSignalEmitter(timeline.markerTrack, OutroFadeSignalTime, outroFadeSignal);
 
             SignalReceiver signalReceiver = directorObject.AddComponent<SignalReceiver>();
             GAIASignalPreviewEffect previewEffect = directorObject.AddComponent<GAIASignalPreviewEffect>();
             ConfigureSignalEffect(previewEffect, signalEffects);
             signalReceiver.AddReaction(
+                introSparkSignal,
+                CreatePersistentReaction(previewEffect.OnIntroSpark));
+            signalReceiver.AddReaction(
+                verseBeaconSignal,
+                CreatePersistentReaction(previewEffect.OnVerseBeacon));
+            signalReceiver.AddReaction(
                 chorusSignal,
                 CreatePersistentReaction(previewEffect.OnChorusPulse));
             signalReceiver.AddReaction(
+                rapidPulseASignal,
+                CreatePersistentReaction(previewEffect.OnRapidPulseA));
+            signalReceiver.AddReaction(
+                rapidPulseBSignal,
+                CreatePersistentReaction(previewEffect.OnRapidPulseB));
+            signalReceiver.AddReaction(
+                bridgeDimSignal,
+                CreatePersistentReaction(previewEffect.OnBridgeDim));
+            signalReceiver.AddReaction(
                 finaleSignal,
                 CreatePersistentReaction(previewEffect.OnFinaleBloom));
+            signalReceiver.AddReaction(
+                outroFadeSignal,
+                CreatePersistentReaction(previewEffect.OnOutroFade));
 
             eventReceiver = UdonSharpUndo.AddComponent<GAIASignalEventReceiver>(visualsRoot.gameObject);
             ConfigureSignalEffect(eventReceiver, signalEffects);
@@ -527,8 +855,14 @@ namespace GAIALyricsMovie.Editor
             marker.signalEventHost = visualsRoot.gameObject;
             marker.signalEventRoutes = new[]
             {
+                new SignalEventRoute(introSparkSignal, nameof(GAIASignalEventReceiver.OnIntroSpark)),
+                new SignalEventRoute(verseBeaconSignal, nameof(GAIASignalEventReceiver.OnVerseBeacon)),
                 new SignalEventRoute(chorusSignal, nameof(GAIASignalEventReceiver.OnChorusPulse)),
+                new SignalEventRoute(rapidPulseASignal, nameof(GAIASignalEventReceiver.OnRapidPulseA)),
+                new SignalEventRoute(rapidPulseBSignal, nameof(GAIASignalEventReceiver.OnRapidPulseB)),
+                new SignalEventRoute(bridgeDimSignal, nameof(GAIASignalEventReceiver.OnBridgeDim)),
                 new SignalEventRoute(finaleSignal, nameof(GAIASignalEventReceiver.OnFinaleBloom)),
+                new SignalEventRoute(outroFadeSignal, nameof(GAIASignalEventReceiver.OnOutroFade)),
             };
 
             EditorUtility.SetDirty(timeline);
@@ -564,6 +898,20 @@ namespace GAIALyricsMovie.Editor
             var serializedReceiver = new SerializedObject(receiver);
             serializedReceiver.FindProperty("chorusHalo").objectReferenceValue = signalEffects.ChorusHalo;
             serializedReceiver.FindProperty("finaleBloom").objectReferenceValue = signalEffects.FinaleBloom;
+            serializedReceiver.FindProperty("introSparkShards").objectReferenceValue = signalEffects.IntroSparkShards;
+            serializedReceiver.FindProperty("rapidTwinA").objectReferenceValue = signalEffects.RapidTwinA;
+            serializedReceiver.FindProperty("rapidTwinB").objectReferenceValue = signalEffects.RapidTwinB;
+            serializedReceiver.FindProperty("bridgeVeil").objectReferenceValue = signalEffects.BridgeVeil;
+            serializedReceiver.FindProperty("outroRing").objectReferenceValue = signalEffects.OutroRing;
+
+            SerializedProperty beaconSegmentsProperty = serializedReceiver.FindProperty("beaconSegments");
+            beaconSegmentsProperty.arraySize = signalEffects.BeaconSegments.Length;
+            for (int index = 0; index < signalEffects.BeaconSegments.Length; index++)
+            {
+                beaconSegmentsProperty.GetArrayElementAtIndex(index).objectReferenceValue =
+                    signalEffects.BeaconSegments[index];
+            }
+
             serializedReceiver.ApplyModifiedPropertiesWithoutUndo();
         }
 
@@ -573,6 +921,17 @@ namespace GAIALyricsMovie.Editor
             var serializedReceiver = new SerializedObject(receiver);
             serializedReceiver.FindProperty("chorusPulseTime").floatValue = (float)ChorusSignalTime;
             serializedReceiver.FindProperty("finaleBloomTime").floatValue = (float)FinaleSignalTime;
+            serializedReceiver.FindProperty("introSparkTime").floatValue = (float)IntroSparkSignalTime;
+            serializedReceiver.FindProperty("rapidPulseATime").floatValue = (float)RapidPulseASignalTime;
+            serializedReceiver.FindProperty("rapidPulseBTime").floatValue = (float)RapidPulseBSignalTime;
+            serializedReceiver.FindProperty("bridgeDimTime").floatValue = (float)BridgeDimSignalTime;
+            serializedReceiver.FindProperty("outroFadeTime").floatValue = (float)OutroFadeSignalTime;
+
+            SerializedProperty beaconTimesProperty = serializedReceiver.FindProperty("beaconTimes");
+            beaconTimesProperty.arraySize = VerseBeaconSignalTimes.Length;
+            for (int index = 0; index < VerseBeaconSignalTimes.Length; index++)
+                beaconTimesProperty.GetArrayElementAtIndex(index).floatValue = (float)VerseBeaconSignalTimes[index];
+
             serializedReceiver.ApplyModifiedPropertiesWithoutUndo();
         }
 

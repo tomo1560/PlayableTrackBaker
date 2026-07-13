@@ -19,8 +19,29 @@ namespace GAIALyricsMovie.Tests
         const string SignalProgramPath = "Assets/GAIALyricsMovie/Signals/GAIASignalEventReceiver.asset";
         const string ShowControllerProgramPath = "Assets/GAIALyricsMovie/Udon/GAIAShowController.asset";
         const string TempBakeFolder = "Assets/BakedTimelineClips/__ndbake_temp__";
-        static readonly double[] SignalTimes = { 56.52d, 153.24d };
-        static readonly string[] SignalEventNames = { "OnChorusPulse", "OnFinaleBloom" };
+        const double ChorusSignalTestTime = 56.52d;
+        const double FinaleSignalTestTime = 153.24d;
+
+        // 全10個のSignalEmitterの時刻(昇順)と、各時刻でベイクされるべきUdonイベント名。
+        // "GAIA Verse Beacon" は同じSignalAssetから3回発火するため、名前が3回登場する。
+        static readonly double[] SignalTimes =
+        {
+            12.5d, 30.0d, 56.52d, 90.0d, 100.0d, 100.4d, 120.0d, 130.0d, 153.24d, 210.0d,
+        };
+        static readonly string[] SignalEventNames =
+        {
+            "OnIntroSpark", "OnVerseBeacon", "OnChorusPulse", "OnVerseBeacon", "OnRapidPulseA",
+            "OnRapidPulseB", "OnVerseBeacon", "OnBridgeDim", "OnFinaleBloom", "OnOutroFade",
+        };
+
+        // 8個の一意なSignalAssetそれぞれについて、時刻昇順で最初に登場した際のイベント名
+        // (= Distinct()が保持する出現順)。SignalReceiverの反応やTimelineBakeMarkerの
+        // signalEventRoutesの並びと一致する。
+        static readonly string[] DistinctSignalEventNames =
+        {
+            "OnIntroSpark", "OnVerseBeacon", "OnChorusPulse", "OnRapidPulseA", "OnRapidPulseB",
+            "OnBridgeDim", "OnFinaleBloom", "OnOutroFade",
+        };
 
         [Test]
         public void GeneratedScene_IsBuildReadyForAutomaticNonDestructiveBake()
@@ -48,20 +69,24 @@ namespace GAIALyricsMovie.Tests
                 .OrderBy(emitter => emitter.time)
                 .ToArray();
             Assert.That(signalEmitters.Select(emitter => emitter.time), Is.EqualTo(SignalTimes));
-            Assert.That(signalEmitters.Select(emitter => emitter.asset).Distinct().Count(), Is.EqualTo(2));
+            Assert.That(signalEmitters.Select(emitter => emitter.asset).Distinct().Count(), Is.EqualTo(8));
             Assert.That(signalEmitters.All(emitter => !emitter.retroactive && !emitter.emitOnce), Is.True);
 
             var signalReceiver = director.GetComponent<SignalReceiver>();
             Assert.That(signalReceiver, Is.Not.Null);
-            Assert.That(signalReceiver.Count(), Is.EqualTo(2));
-            SignalAsset[] emittedSignals = signalEmitters.Select(emitter => emitter.asset).ToArray();
-            for (int index = 0; index < emittedSignals.Length; index++)
+            Assert.That(signalReceiver.Count(), Is.EqualTo(8));
+            SignalAsset[] distinctSignalsInFirstOccurrenceOrder = signalEmitters
+                .Select(emitter => emitter.asset)
+                .Distinct()
+                .ToArray();
+            Assert.That(distinctSignalsInFirstOccurrenceOrder, Has.Length.EqualTo(8));
+            for (int index = 0; index < distinctSignalsInFirstOccurrenceOrder.Length; index++)
             {
-                var reaction = signalReceiver.GetReaction(emittedSignals[index]);
+                var reaction = signalReceiver.GetReaction(distinctSignalsInFirstOccurrenceOrder[index]);
                 Assert.That(reaction, Is.Not.Null);
                 Assert.That(reaction.GetPersistentEventCount(), Is.EqualTo(1));
                 Assert.That(reaction.GetPersistentTarget(0).GetType().Name, Is.EqualTo("GAIASignalPreviewEffect"));
-                Assert.That(reaction.GetPersistentMethodName(0), Is.EqualTo(SignalEventNames[index]));
+                Assert.That(reaction.GetPersistentMethodName(0), Is.EqualTo(DistinctSignalEventNames[index]));
             }
 
             TimelineBakeMarker marker = director.GetComponent<TimelineBakeMarker>();
@@ -76,36 +101,79 @@ namespace GAIALyricsMovie.Tests
             Assert.That(marker.signalEventHost, Is.Not.Null);
             Assert.That(marker.signalEventHost.name, Is.EqualTo("Baked Visuals"));
             Assert.That(marker.recordRoots.Count(root => root == marker.signalEventHost), Is.EqualTo(1));
-            Assert.That(marker.signalEventRoutes, Has.Length.EqualTo(2));
+            Assert.That(marker.signalEventRoutes, Has.Length.EqualTo(8));
             Assert.That(marker.signalEventRoutes.Select(route => route.udonEventName),
-                Is.EqualTo(SignalEventNames));
-            Assert.That(marker.signalEventRoutes.Select(route => route.signal), Is.EqualTo(emittedSignals));
+                Is.EqualTo(DistinctSignalEventNames));
+            Assert.That(marker.signalEventRoutes.Select(route => route.signal),
+                Is.EqualTo(distinctSignalsInFirstOccurrenceOrder));
             Assert.That(AssetDatabase.FindAssets("l:GAIALyricsMovie.OwnedBake.v1"), Is.Empty);
             Assert.That(AssetDatabase.LoadMainAssetAtPath(SignalProgramPath), Is.Not.Null);
+
+            // Fidelity Probes: Baked VisualsはPlayableTrackベイクの忠実度プローブ用に5レイヤーになる。
+            Transform visualsRootTransform = marker.signalEventHost.transform;
+            Assert.That(visualsRootTransform.childCount, Is.EqualTo(5));
+            Transform probesLayer = visualsRootTransform.Find("Fidelity Probes");
+            Assert.That(probesLayer, Is.Not.Null);
+            string[] expectedProbeNames =
+            {
+                "Comet Circuit", "Drift Monolith", "Gyro Spinner", "Teleport Beacons",
+                "Orbit Pair", "Phase Choir", "Scale Beat",
+            };
+            Assert.That(
+                Enumerable.Range(0, probesLayer.childCount).Select(index => probesLayer.GetChild(index).name),
+                Is.EqualTo(expectedProbeNames));
 
             MonoBehaviour eventReceiver = marker.signalEventHost.GetComponents<MonoBehaviour>()
                 .Single(component => component.GetType().Name == "GAIASignalEventReceiver");
             var serializedEventReceiver = new SerializedObject(eventReceiver);
             var chorusHalo = serializedEventReceiver.FindProperty("chorusHalo").objectReferenceValue as GameObject;
             var finaleBloom = serializedEventReceiver.FindProperty("finaleBloom").objectReferenceValue as GameObject;
-            Assert.That(chorusHalo, Is.Not.Null);
-            Assert.That(finaleBloom, Is.Not.Null);
+            var introSparkShards =
+                serializedEventReceiver.FindProperty("introSparkShards").objectReferenceValue as GameObject;
+            var rapidTwinA = serializedEventReceiver.FindProperty("rapidTwinA").objectReferenceValue as GameObject;
+            var rapidTwinB = serializedEventReceiver.FindProperty("rapidTwinB").objectReferenceValue as GameObject;
+            var bridgeVeil = serializedEventReceiver.FindProperty("bridgeVeil").objectReferenceValue as GameObject;
+            var outroRing = serializedEventReceiver.FindProperty("outroRing").objectReferenceValue as GameObject;
+            SerializedProperty beaconSegmentsProperty = serializedEventReceiver.FindProperty("beaconSegments");
+            Assert.That(beaconSegmentsProperty.arraySize, Is.EqualTo(3));
+            GameObject[] beaconSegments = Enumerable.Range(0, beaconSegmentsProperty.arraySize)
+                .Select(index => beaconSegmentsProperty.GetArrayElementAtIndex(index).objectReferenceValue as GameObject)
+                .ToArray();
+            GameObject[] allEffectObjects = new[]
+                {
+                    chorusHalo, finaleBloom, introSparkShards, rapidTwinA, rapidTwinB, bridgeVeil, outroRing,
+                }
+                .Concat(beaconSegments)
+                .ToArray();
+            Assert.That(allEffectObjects, Has.All.Not.Null);
+            Assert.That(allEffectObjects.All(effect => !effect.activeSelf), Is.True);
+
             Assert.That(serializedEventReceiver.FindProperty("chorusPulseTime").floatValue,
-                Is.EqualTo((float)SignalTimes[0]));
+                Is.EqualTo((float)ChorusSignalTestTime));
             Assert.That(serializedEventReceiver.FindProperty("finaleBloomTime").floatValue,
-                Is.EqualTo((float)SignalTimes[1]));
+                Is.EqualTo((float)FinaleSignalTestTime));
+            Assert.That(serializedEventReceiver.FindProperty("introSparkTime").floatValue, Is.EqualTo(12.5f));
+            Assert.That(serializedEventReceiver.FindProperty("rapidPulseATime").floatValue, Is.EqualTo(100.0f));
+            Assert.That(serializedEventReceiver.FindProperty("rapidPulseBTime").floatValue, Is.EqualTo(100.4f));
+            Assert.That(serializedEventReceiver.FindProperty("bridgeDimTime").floatValue, Is.EqualTo(130.0f));
+            Assert.That(serializedEventReceiver.FindProperty("outroFadeTime").floatValue, Is.EqualTo(210.0f));
+            SerializedProperty beaconTimesProperty = serializedEventReceiver.FindProperty("beaconTimes");
+            Assert.That(beaconTimesProperty.arraySize, Is.EqualTo(3));
+            Assert.That(
+                Enumerable.Range(0, beaconTimesProperty.arraySize)
+                    .Select(index => beaconTimesProperty.GetArrayElementAtIndex(index).floatValue),
+                Is.EqualTo(new[] { 30f, 90f, 120f }));
+
             Component backingUdon = marker.signalEventHost.GetComponents<Component>()
                 .Single(component => component.GetType().FullName == "VRC.Udon.UdonBehaviour");
             var serializedBackingUdon = new SerializedObject(backingUdon);
             Assert.That(serializedBackingUdon.FindProperty("programSource").objectReferenceValue, Is.Not.Null);
             SerializedProperty backingObjectReferences =
                 serializedBackingUdon.FindProperty("publicVariablesUnityEngineObjects");
-            Assert.That(backingObjectReferences.arraySize, Is.EqualTo(2));
+            Assert.That(backingObjectReferences.arraySize, Is.EqualTo(allEffectObjects.Length));
             Assert.That(Enumerable.Range(0, backingObjectReferences.arraySize)
                     .Select(index => backingObjectReferences.GetArrayElementAtIndex(index).objectReferenceValue),
-                Is.EquivalentTo(new UnityEngine.Object[] { chorusHalo, finaleBloom }));
-            Assert.That(chorusHalo.activeSelf, Is.False);
-            Assert.That(finaleBloom.activeSelf, Is.False);
+                Is.EquivalentTo(allEffectObjects));
 
             GameObject playButton = GameObject.Find("GAIA Play Button");
             Assert.That(playButton, Is.Not.Null);
@@ -158,12 +226,56 @@ namespace GAIALyricsMovie.Tests
             var serializedReceiver = new SerializedObject(receiver);
             var chorusHalo = (GameObject)serializedReceiver.FindProperty("chorusHalo").objectReferenceValue;
             var finaleBloom = (GameObject)serializedReceiver.FindProperty("finaleBloom").objectReferenceValue;
+            var introSparkShards = (GameObject)serializedReceiver.FindProperty("introSparkShards").objectReferenceValue;
+            var rapidTwinA = (GameObject)serializedReceiver.FindProperty("rapidTwinA").objectReferenceValue;
+            var rapidTwinB = (GameObject)serializedReceiver.FindProperty("rapidTwinB").objectReferenceValue;
+            var bridgeVeil = (GameObject)serializedReceiver.FindProperty("bridgeVeil").objectReferenceValue;
+            var outroRing = (GameObject)serializedReceiver.FindProperty("outroRing").objectReferenceValue;
+            SerializedProperty beaconSegmentsProperty = serializedReceiver.FindProperty("beaconSegments");
+            GameObject[] beaconSegments = Enumerable.Range(0, beaconSegmentsProperty.arraySize)
+                .Select(index => (GameObject)beaconSegmentsProperty.GetArrayElementAtIndex(index).objectReferenceValue)
+                .ToArray();
             System.Reflection.MethodInfo resync = receiver.GetType().GetMethod("ResyncToTime");
             Assert.That(resync, Is.Not.Null);
 
+            void AssertBeaconSegments(int firedCount)
+            {
+                for (int index = 0; index < beaconSegments.Length; index++)
+                    Assert.That(beaconSegments[index].activeSelf, Is.EqualTo(index < firedCount),
+                        $"beaconSegments[{index}] (firedCount={firedCount})");
+            }
+
             resync.Invoke(receiver, new object[] { 0f });
+            Assert.That(introSparkShards.activeSelf, Is.False);
             Assert.That(chorusHalo.activeSelf, Is.False);
+            AssertBeaconSegments(0);
+            Assert.That(rapidTwinA.activeSelf, Is.False);
+            Assert.That(rapidTwinB.activeSelf, Is.False);
+            Assert.That(bridgeVeil.activeSelf, Is.False);
             Assert.That(finaleBloom.activeSelf, Is.False);
+            Assert.That(outroRing.activeSelf, Is.False);
+
+            // t=35: イントロスパーク点灯、Verse Beaconはセグメント1個だけ点灯、ベールはまだ無し。
+            resync.Invoke(receiver, new object[] { 35f });
+            Assert.That(introSparkShards.activeSelf, Is.True);
+            AssertBeaconSegments(1);
+            Assert.That(bridgeVeil.activeSelf, Is.False);
+
+            // t=100.2: Rapid Pulse Aだけ点灯(Bは100.4なのでまだ)。
+            resync.Invoke(receiver, new object[] { 100.2f });
+            Assert.That(rapidTwinA.activeSelf, Is.True);
+            Assert.That(rapidTwinB.activeSelf, Is.False);
+
+            // t=101: Rapid Pulse A/Bともに点灯。
+            resync.Invoke(receiver, new object[] { 101f });
+            Assert.That(rapidTwinA.activeSelf, Is.True);
+            Assert.That(rapidTwinB.activeSelf, Is.True);
+
+            // t=140: Bridge Dimでベールが点灯し、イントロスパークは退避する。Verse Beaconは3個とも点灯済み。
+            resync.Invoke(receiver, new object[] { 140f });
+            Assert.That(bridgeVeil.activeSelf, Is.True);
+            Assert.That(introSparkShards.activeSelf, Is.False);
+            AssertBeaconSegments(3);
 
             resync.Invoke(receiver, new object[] { 60f });
             Assert.That(chorusHalo.activeSelf, Is.True);
@@ -174,14 +286,27 @@ namespace GAIALyricsMovie.Tests
             Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.True);
 
-            // 保存シーンの初期状態(両方非表示)へ戻してから、実イベント計測が汚れていないことを確認する。
+            // t=215: 全演出が終端状態(アウトロリングも含む)。
+            resync.Invoke(receiver, new object[] { 215f });
+            Assert.That(introSparkShards.activeSelf, Is.False);
+            Assert.That(chorusHalo.activeSelf, Is.True);
+            AssertBeaconSegments(3);
+            Assert.That(rapidTwinA.activeSelf, Is.True);
+            Assert.That(rapidTwinB.activeSelf, Is.True);
+            Assert.That(bridgeVeil.activeSelf, Is.True);
+            Assert.That(finaleBloom.activeSelf, Is.True);
+            Assert.That(outroRing.activeSelf, Is.True);
+
+            // 保存シーンの初期状態(すべて非表示)へ戻してから、実イベント計測が汚れていないことを確認する。
             resync.Invoke(receiver, new object[] { 0f });
             Assert.That(chorusHalo.activeSelf, Is.False);
             Assert.That(finaleBloom.activeSelf, Is.False);
+            AssertBeaconSegments(0);
             serializedReceiver.Update();
             Assert.That(serializedReceiver.FindProperty("eventCount").intValue, Is.Zero,
                 "ResyncToTimeは実イベント計測のeventCountを増やしてはいけません。");
             Assert.That(serializedReceiver.FindProperty("lastEventName").stringValue, Is.Empty);
+            Assert.That(serializedReceiver.FindProperty("beaconFireCount").intValue, Is.Zero);
         }
 
         [Test]
@@ -312,7 +437,7 @@ namespace GAIALyricsMovie.Tests
                 Is.EqualTo(SignalEventNames));
 
             TrackAsset signalTrack = runtimeTimeline.markerTrack;
-            Assert.That(signalTrack.GetMarkers().OfType<SignalEmitter>().Count(), Is.EqualTo(2));
+            Assert.That(signalTrack.GetMarkers().OfType<SignalEmitter>().Count(), Is.EqualTo(10));
             var signalReceiver = director.GetComponent<SignalReceiver>();
             Assert.That(signalReceiver, Is.Not.Null);
             MonoBehaviour runtimeReceiver = Object.FindObjectsOfType<MonoBehaviour>(true)
@@ -320,37 +445,85 @@ namespace GAIALyricsMovie.Tests
             var serializedRuntimeReceiver = new SerializedObject(runtimeReceiver);
             var chorusHalo = (GameObject)serializedRuntimeReceiver.FindProperty("chorusHalo").objectReferenceValue;
             var finaleBloom = (GameObject)serializedRuntimeReceiver.FindProperty("finaleBloom").objectReferenceValue;
+            var introSparkShards =
+                (GameObject)serializedRuntimeReceiver.FindProperty("introSparkShards").objectReferenceValue;
+            var bridgeVeil = (GameObject)serializedRuntimeReceiver.FindProperty("bridgeVeil").objectReferenceValue;
+            // Play中のUdonSharpプロキシはSerializedObjectで配列プロパティを解決できないことがあるため、
+            // シーンからデシリアライズ済みのC#フィールドをリフレクションで直接読む。
+            var beaconSegments = (GameObject[])runtimeReceiver.GetType()
+                .GetField("beaconSegments",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .GetValue(runtimeReceiver);
+            Assert.That(beaconSegments, Is.Not.Null.And.Length.EqualTo(3));
 
             Assert.That(chorusHalo.activeSelf, Is.False);
             Assert.That(finaleBloom.activeSelf, Is.False);
+            Assert.That(beaconSegments.All(segment => !segment.activeSelf), Is.True);
 
+            // 【ベイク済みAnimationEventの実挙動(このテストで実測・固定化)】
+            // - Stop→time→Playでグラフを再構築すると、最初の評価で0秒から現在時刻までの
+            //   全AnimationEventが時刻順に一括再生される。
+            // - 再生中の前方タイムジャンプも、通過区間のAnimationEventをすべて発火する。
+            // - 時刻0で再構築した場合([0,0])は何も発火しない(再生ボタンのリスタートが清潔な理由)。
+            // GAIAShowControllerはこの一括再生をResyncToTimeの遅延再実行で正規化する。
+
+            // グラフ再構築して30.02秒で評価: [0, 30.02]のIntro Spark(12.5)とVerse Beacon(30.0)が発火。
             director.Stop();
-            director.time = SignalTimes[0] - 0.02d;
+            director.time = 30.0d - 0.02d;
             director.Evaluate();
             director.Play();
-            director.time = SignalTimes[0] + 0.02d;
+            director.time = 30.0d + 0.02d;
+            director.Evaluate();
+            yield return null;
+
+            Assert.That(introSparkShards.activeSelf, Is.True);
+            Assert.That(beaconSegments[0].activeSelf, Is.True);
+            Assert.That(beaconSegments[1].activeSelf, Is.False);
+            serializedRuntimeReceiver.Update();
+            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(2));
+            Assert.That(serializedRuntimeReceiver.FindProperty("beaconFireCount").intValue, Is.EqualTo(1));
+
+            // 再構築して56.54秒で評価: [0, 56.54]の12.5 / 30.0 / 56.52が改めて一括再生される
+            // (Verse Beaconは2回目の発火となり、セグメント2個目が点灯する)。
+            director.Stop();
+            director.time = ChorusSignalTestTime - 0.02d;
+            director.Evaluate();
+            director.Play();
+            director.time = ChorusSignalTestTime + 0.02d;
             director.Evaluate();
             yield return null;
 
             Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.False);
+            Assert.That(beaconSegments[1].activeSelf, Is.True);
+            serializedRuntimeReceiver.Update();
+            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(5));
+            Assert.That(serializedRuntimeReceiver.FindProperty("beaconFireCount").intValue, Is.EqualTo(2));
 
-            director.time = SignalTimes[1] - 0.02d;
+            // 再生中の前方ジャンプ(56.54→153.26): 通過する90 / 100 / 100.4 / 120 / 130 / 153.24の
+            // 6イベントが発火する。4回目のVerse Beacon(120)はセグメント範囲外だが、
+            // 受信側の境界ガードにより安全に無視される。
+            director.time = FinaleSignalTestTime - 0.02d;
             director.Evaluate();
-            director.time = SignalTimes[1] + 0.02d;
+            director.time = FinaleSignalTestTime + 0.02d;
             director.Evaluate();
             yield return null;
 
             // 演出は加算式のため、フィナーレ発火後もハローは点灯したまま。
+            // Bridge Dim(130)はイントロスパークのみ退避させる。
             Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.True);
+            Assert.That(bridgeVeil.activeSelf, Is.True);
+            Assert.That(introSparkShards.activeSelf, Is.False);
+            Assert.That(beaconSegments[2].activeSelf, Is.True);
             serializedRuntimeReceiver.Update();
-            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(2));
+            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(11));
+            Assert.That(serializedRuntimeReceiver.FindProperty("beaconFireCount").intValue, Is.EqualTo(4));
             Assert.That(serializedRuntimeReceiver.FindProperty("lastEventName").stringValue,
-                Is.EqualTo(SignalEventNames[1]));
+                Is.EqualTo("OnFinaleBloom"));
 
-            // 再生ボタンの再押下相当: Stopでグラフを破棄して0秒から再構築すると、
-            // 通過済みAnimationEventが再発火せず、ResyncToTimeで演出が初期状態へ戻ること。
+            // 再生ボタンの再押下相当: 時刻0での再構築([0,0])は何も発火せず、
+            // ResyncToTimeで演出とbeaconFireCountが初期状態へ戻ること。
             director.Stop();
             director.time = 0d;
             director.Evaluate();
@@ -362,9 +535,14 @@ namespace GAIALyricsMovie.Tests
 
             Assert.That(chorusHalo.activeSelf, Is.False);
             Assert.That(finaleBloom.activeSelf, Is.False);
+            Assert.That(bridgeVeil.activeSelf, Is.False);
+            Assert.That(introSparkShards.activeSelf, Is.False);
+            Assert.That(beaconSegments.All(segment => !segment.activeSelf), Is.True);
             serializedRuntimeReceiver.Update();
-            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(2),
-                "リスタートのグラフ再構築で通過済みイベントが再発火してはいけません。");
+            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(11),
+                "リスタートのグラフ再構築([0,0])で通過済みイベントが再発火してはいけません。");
+            Assert.That(serializedRuntimeReceiver.FindProperty("beaconFireCount").intValue, Is.Zero,
+                "ResyncToTime(0)はbeaconFireCountを初期化するはずです。");
 
             yield return new ExitPlayMode();
         }
