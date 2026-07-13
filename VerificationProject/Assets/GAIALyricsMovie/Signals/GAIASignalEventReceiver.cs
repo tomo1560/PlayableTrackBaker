@@ -18,12 +18,12 @@ namespace GAIALyricsMovie
 
         public void OnChorusPulse()
         {
-            ShowEffect(chorusHalo, finaleBloom, nameof(OnChorusPulse));
+            ShowEffect(chorusHalo, nameof(OnChorusPulse));
         }
 
         public void OnFinaleBloom()
         {
-            ShowEffect(finaleBloom, chorusHalo, nameof(OnFinaleBloom));
+            ShowEffect(finaleBloom, nameof(OnFinaleBloom));
         }
 
         /// <summary>
@@ -32,17 +32,17 @@ namespace GAIALyricsMovie
         /// </summary>
         public void ResyncToTime(float elapsedSeconds)
         {
-            chorusHalo.SetActive(elapsedSeconds >= chorusPulseTime && elapsedSeconds < finaleBloomTime);
+            chorusHalo.SetActive(elapsedSeconds >= chorusPulseTime);
             finaleBloom.SetActive(elapsedSeconds >= finaleBloomTime);
             Debug.Log($"[GAIA Signal / Udon] ResyncToTime({elapsedSeconds:F2}s)");
         }
 
-        void ShowEffect(GameObject enabledEffect, GameObject disabledEffect, string eventName)
+        // 演出は加算式: ハローは56.52秒以降、ブルームは153.24秒以降それぞれ点灯したままにする。
+        void ShowEffect(GameObject effect, string eventName)
         {
             eventCount++;
             lastEventName = eventName;
-            enabledEffect.SetActive(true);
-            disabledEffect.SetActive(false);
+            effect.SetActive(true);
             Debug.Log($"[GAIA Signal / Udon] {eventName} ({eventCount})");
         }
     }

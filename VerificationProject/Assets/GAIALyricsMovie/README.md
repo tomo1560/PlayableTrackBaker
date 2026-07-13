@@ -24,7 +24,8 @@ Build & Publish / Build & Test 時は、ビルド用一時シーン上でTimelin
 
 Timeline のグローバルMarker Track `GAIA Signal Cues` には、56.52秒の `GAIA Chorus Pulse` と
 153.24秒の `GAIA Finale Bloom` があります。Unity Playでは `SignalReceiver` と
-プレビュー演出がシアンのハロー／マゼンタのブルームを切り替えます。
+プレビュー演出がシアンのハロー／マゼンタのブルームを点灯します。演出は加算式で、
+発火済みのハローはブルーム発火後も点灯したままです。
 
 Build & Publish / Build & Test時は、同じ2個のSignalEmitterを
 `[Baked] Baked Visuals` のAnimationClip上にある `SendCustomEvent` へ変換し、
@@ -32,7 +33,7 @@ Build & Publish / Build & Test時は、同じ2個のSignalEmitterを
 Editor用のプレビューコンポーネントはビルド用シーンから自動除去されるため、本番で二重発火しません。
 
 確認するには、Unity PlayまたはVRChatのBuild & Testで▶ボタンから再生し、56.52秒にシアンの
-ハロー、153.24秒にマゼンタのブルームへ切り替わることを見ます。Build & Test側では
+ハローが点灯し、153.24秒にマゼンタのブルームが加わることを見ます。Build & Test側では
 VRChat client output logの `[GAIA Signal / Udon]` でもUdonイベント名と発火回数を確認できます。
 
 ## ▶ボタンとインスタンス同期再生

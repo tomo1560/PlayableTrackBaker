@@ -14,21 +14,21 @@ namespace GAIALyricsMovie
         public void OnChorusPulse()
         {
             if (Application.isPlaying)
-                ShowEffect(chorusHalo, finaleBloom, nameof(OnChorusPulse));
+                ShowEffect(chorusHalo, nameof(OnChorusPulse));
         }
 
         public void OnFinaleBloom()
         {
             if (Application.isPlaying)
-                ShowEffect(finaleBloom, chorusHalo, nameof(OnFinaleBloom));
+                ShowEffect(finaleBloom, nameof(OnFinaleBloom));
         }
 
-        void ShowEffect(GameObject enabledEffect, GameObject disabledEffect, string eventName)
+        // 演出は加算式: 本番のGAIASignalEventReceiverと同じく、発火済みの演出は点灯したままにする。
+        void ShowEffect(GameObject effect, string eventName)
         {
             eventCount++;
             lastEventName = eventName;
-            enabledEffect.SetActive(true);
-            disabledEffect.SetActive(false);
+            effect.SetActive(true);
             Debug.Log($"[GAIA Signal Preview] {eventName} ({eventCount})", this);
         }
     }

@@ -59,10 +59,7 @@ namespace GAIALyricsMovie
                 return;
             }
 
-            // AudioTrackはPlayableDirectorにバインド済みなので、timeへのシークだけで音も追従する。
-            director.time = elapsed;
-            director.Play();
-            ResyncSignals((float)elapsed);
+            SeekAndPlay(elapsed);
             ScheduleDriftCheck();
         }
 
@@ -93,13 +90,22 @@ namespace GAIALyricsMovie
 
             if (Mathf.Abs((float)(director.time - expected)) > DriftToleranceSeconds)
             {
-                director.time = expected;
-                director.Play();
-                ResyncSignals((float)expected);
+                SeekAndPlay(expected);
                 Debug.Log($"[GAIA Show / Udon] Drift corrected to {expected:F2}s");
             }
 
             ScheduleDriftCheck();
+        }
+
+        void SeekAndPlay(double elapsed)
+        {
+            // 再生中にtimeを直接巻き戻すとTimelineがループ扱いで通過済みマーカー/AnimationEventを
+            // 再発火させることがあるため、Stopでグラフを破棄してから目的位置で再構築する。
+            // AudioTrackはPlayableDirectorにバインド済みなので、timeへのシークだけで音も追従する。
+            director.Stop();
+            director.time = elapsed;
+            director.Play();
+            ResyncSignals((float)elapsed);
         }
 
         void FinishShow(float elapsedSeconds)

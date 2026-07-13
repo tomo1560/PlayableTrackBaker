@@ -169,8 +169,9 @@ namespace GAIALyricsMovie.Tests
             Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.False);
 
+            // 演出は加算式のため、フィナーレ以降もハローは点灯したまま。
             resync.Invoke(receiver, new object[] { 200f });
-            Assert.That(chorusHalo.activeSelf, Is.False);
+            Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.True);
 
             // 保存シーンの初期状態(両方非表示)へ戻してから、実イベント計測が汚れていないことを確認する。
@@ -340,12 +341,30 @@ namespace GAIALyricsMovie.Tests
             director.Evaluate();
             yield return null;
 
-            Assert.That(chorusHalo.activeSelf, Is.False);
+            // 演出は加算式のため、フィナーレ発火後もハローは点灯したまま。
+            Assert.That(chorusHalo.activeSelf, Is.True);
             Assert.That(finaleBloom.activeSelf, Is.True);
             serializedRuntimeReceiver.Update();
             Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(2));
             Assert.That(serializedRuntimeReceiver.FindProperty("lastEventName").stringValue,
                 Is.EqualTo(SignalEventNames[1]));
+
+            // 再生ボタンの再押下相当: Stopでグラフを破棄して0秒から再構築すると、
+            // 通過済みAnimationEventが再発火せず、ResyncToTimeで演出が初期状態へ戻ること。
+            director.Stop();
+            director.time = 0d;
+            director.Evaluate();
+            director.Play();
+            System.Reflection.MethodInfo runtimeResync = runtimeReceiver.GetType().GetMethod("ResyncToTime");
+            Assert.That(runtimeResync, Is.Not.Null);
+            runtimeResync.Invoke(runtimeReceiver, new object[] { 0f });
+            yield return null;
+
+            Assert.That(chorusHalo.activeSelf, Is.False);
+            Assert.That(finaleBloom.activeSelf, Is.False);
+            serializedRuntimeReceiver.Update();
+            Assert.That(serializedRuntimeReceiver.FindProperty("eventCount").intValue, Is.EqualTo(2),
+                "リスタートのグラフ再構築で通過済みイベントが再発火してはいけません。");
 
             yield return new ExitPlayMode();
         }
