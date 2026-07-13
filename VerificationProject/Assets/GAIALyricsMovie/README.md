@@ -30,16 +30,16 @@ SignalAsset)があります。Unity Playでは `SignalReceiver` とプレビュ�
 以降も点灯したまま)で、Bridge Dimのみ例外的にIntro Spark Shardsを退避させます。
 Editor用のプレビューコンポーネントはビルド用シーンから自動除去されるため、本番で二重発火しません。
 
-| 時刻(秒) | SignalAsset | Udonイベント | 演出 |
+| 時刻(秒) | SignalAsset | Udonイベント | 演出(見る場所) |
 |---|---|---|---|
-| 12.5 | GAIA Intro Spark | OnIntroSpark | Intro Spark Shards(シアンの小片×5)が点灯 |
-| 30.0 / 90.0 / 120.0 | GAIA Verse Beacon | OnVerseBeacon | Verse Beacon Towerのセグメントが1個ずつ点灯(計3段) |
-| 56.52 | GAIA Chorus Pulse | OnChorusPulse | Chorus Signal Halo(シアンの輪)が点灯 |
-| 100.0 | GAIA Rapid Pulse A | OnRapidPulseA | Rapid Twin A(シアンの球)が点灯 |
-| 100.4 | GAIA Rapid Pulse B | OnRapidPulseB | Rapid Twin B(マゼンタの球)が点灯 |
-| 130.0 | GAIA Bridge Dim | OnBridgeDim | Bridge Veil(紺色の大スラブ)が点灯し、Intro Spark Shardsを退避 |
-| 153.24 | GAIA Finale Bloom | OnFinaleBloom | Finale Signal Bloom(マゼンタの球)が点灯 |
-| 210.0 | GAIA Outro Fade | OnOutroFade | Outro Ring(マゼンタのトーラス)が点灯 |
+| 12.5 | GAIA Intro Spark | OnIntroSpark | Intro Spark Shards: ステージ右脇(x=+6)にシアンの放射クラスタが点灯 |
+| 30.0 / 90.0 / 120.0 | GAIA Verse Beacon | OnVerseBeacon | Verse Beacon Tower: ステージ左脇(x=-6)の3段タワーが1段ずつ点灯 |
+| 56.52 | GAIA Chorus Pulse | OnChorusPulse | Chorus Signal Halo: ビジュアル中心の水平なシアンの輪が点灯 |
+| 100.0 | GAIA Rapid Pulse A | OnRapidPulseA | Rapid Twin A: 歌詞上空・左のシアンの球が点灯 |
+| 100.4 | GAIA Rapid Pulse B | OnRapidPulseB | Rapid Twin B: 歌詞上空・右のマゼンタの球が0.4秒遅れて点灯 |
+| 130.0 | GAIA Bridge Dim | OnBridgeDim | Bridge Veil: 暗い球がGAIA Coreを食のように覆い、Intro Spark Shardsが退避 |
+| 153.24 | GAIA Finale Bloom | OnFinaleBloom | Finale Signal Bloom: ビジュアル中心にマゼンタの球が点灯 |
+| 210.0 | GAIA Outro Fade | OnOutroFade | Outro Ring: プレイヤー正対の縦向き大リング(マゼンタ)が点灯 |
 
 確認するには、Unity PlayまたはVRChatのBuild & Testで▶ボタンから再生し、上表の時刻ごとに
 各演出が加わっていくことを見ます。Build & Test側ではVRChat client output logの

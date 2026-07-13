@@ -627,15 +627,16 @@ namespace GAIALyricsMovie.Editor
 
         static GameObject CreateIntroSparkShards(Transform root, Material cyan)
         {
+            // ステージ右脇・歌詞の手前側。ビジュアル本体(z=17)から離し、スポーンから直視できる位置に置く。
             var cluster = new GameObject("Intro Spark Shards");
             cluster.transform.SetParent(root, false);
-            cluster.transform.localPosition = new Vector3(0f, 1.5f, 0f);
+            cluster.transform.localPosition = new Vector3(6f, -1f, -8f);
             for (int index = 0; index < 5; index++)
             {
                 float angle = index / 5f * Mathf.PI * 2f;
                 GameObject shard = CreatePrimitive($"Spark Shard {index + 1}", PrimitiveType.Cube, cluster.transform);
-                shard.transform.localPosition = new Vector3(Mathf.Cos(angle) * 0.6f, Mathf.Sin(angle) * 0.6f, 0f);
-                shard.transform.localScale = new Vector3(0.08f, 0.3f, 0.08f);
+                shard.transform.localPosition = new Vector3(Mathf.Cos(angle) * 1.6f, Mathf.Sin(angle) * 1.6f, 0f);
+                shard.transform.localScale = new Vector3(0.22f, 1.1f, 0.22f);
                 shard.transform.localRotation = Quaternion.Euler(0f, 0f, angle * Mathf.Rad2Deg);
                 shard.GetComponent<Renderer>().sharedMaterial = cyan;
                 UnityEngine.Object.DestroyImmediate(shard.GetComponent<Collider>());
@@ -647,16 +648,17 @@ namespace GAIALyricsMovie.Editor
 
         static GameObject[] CreateVerseBeaconTower(Transform root, Material cyan, Material magenta)
         {
+            // ステージ左脇。点灯セグメント数(=発火回数)を遠目でも数えられるサイズで積む。
             var tower = new GameObject("Verse Beacon Tower");
             tower.transform.SetParent(root, false);
-            tower.transform.localPosition = new Vector3(-3.5f, 0f, 0f);
+            tower.transform.localPosition = new Vector3(-6f, -2.6f, -8f);
 
             var segments = new GameObject[3];
             for (int index = 0; index < segments.Length; index++)
             {
                 GameObject segment = CreatePrimitive($"Beacon Segment {index + 1}", PrimitiveType.Cylinder, tower.transform);
-                segment.transform.localPosition = new Vector3(0f, index * 0.6f, 0f);
-                segment.transform.localScale = new Vector3(0.3f, 0.28f, 0.3f);
+                segment.transform.localPosition = new Vector3(0f, index * 1.5f, 0f);
+                segment.transform.localScale = new Vector3(1.1f, 0.65f, 1.1f);
                 segment.GetComponent<Renderer>().sharedMaterial = index % 2 == 0 ? cyan : magenta;
                 UnityEngine.Object.DestroyImmediate(segment.GetComponent<Collider>());
                 segment.SetActive(false);
@@ -668,9 +670,10 @@ namespace GAIALyricsMovie.Editor
 
         static GameObject CreateRapidTwin(string name, Transform root, Material material, Vector3 localPosition)
         {
+            // 歌詞の上空・左右対称。0.4秒差の点灯順が読めるよう、間隔を広げて大きくする。
             GameObject twin = CreatePrimitive(name, PrimitiveType.Sphere, root);
-            twin.transform.localPosition = localPosition + new Vector3(0f, 2.5f, 0f);
-            twin.transform.localScale = Vector3.one * 0.4f;
+            twin.transform.localPosition = localPosition * 3f + new Vector3(0f, 5.2f, -7f);
+            twin.transform.localScale = Vector3.one * 1.2f;
             twin.GetComponent<Renderer>().sharedMaterial = material;
             UnityEngine.Object.DestroyImmediate(twin.GetComponent<Collider>());
             twin.SetActive(false);
@@ -679,9 +682,11 @@ namespace GAIALyricsMovie.Editor
 
         static GameObject CreateBridgeVeil(Transform root, Material floor)
         {
-            GameObject veil = CreatePrimitive("Bridge Veil", PrimitiveType.Cube, root);
-            veil.transform.localPosition = new Vector3(0f, 3f, 6f);
-            veil.transform.localScale = new Vector3(16f, 8f, 0.4f);
+            // GAIA Core(2.5m)の手前を覆う暗い球。「コアが食(エクリプス)で暗転する」見た目にし、
+            // Chorus Halo / Finale Bloom / Outro Ring(いずれもより大径)は遮らない。
+            GameObject veil = CreatePrimitive("Bridge Veil", PrimitiveType.Sphere, root);
+            veil.transform.localPosition = new Vector3(0f, 0f, -2.5f);
+            veil.transform.localScale = Vector3.one * 3.5f;
             veil.GetComponent<Renderer>().sharedMaterial = floor;
             UnityEngine.Object.DestroyImmediate(veil.GetComponent<Collider>());
             veil.SetActive(false);
@@ -690,10 +695,10 @@ namespace GAIALyricsMovie.Editor
 
         static GameObject CreateOutroRing(Transform root, Mesh torus, Material magenta)
         {
+            // Chorus Halo(水平・8.5倍)と区別できるよう、プレイヤー正対の縦リングでひと回り大きくする。
             var ring = new GameObject("Outro Ring");
             ring.transform.SetParent(root, false);
-            ring.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-            ring.transform.localScale = Vector3.one * 6.5f;
+            ring.transform.localScale = Vector3.one * 11f;
             ring.AddComponent<MeshFilter>().sharedMesh = torus;
             ring.AddComponent<MeshRenderer>().sharedMaterial = magenta;
             ring.SetActive(false);
