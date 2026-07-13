@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.Timeline;
 using PlayableTrackBaking;
@@ -119,6 +120,33 @@ namespace GAIALyricsMovie.Tests
                     $"{materialName} の _EMISSION キーワードが無効です。エミッションが消えてVRChatで真っ黒に見えます。");
                 Assert.That(material.GetColor("_EmissionColor").maxColorComponent, Is.GreaterThan(0f), materialName);
             }
+        }
+
+        [Test]
+        public void EmissionGuard_RestoresDisabledEmissionKeywordBeforeBuild()
+        {
+            EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+            var cyanMaterial = AssetDatabase.LoadAssetAtPath<Material>(
+                "Assets/GAIALyricsMovie/Generated/GAIA_Cyan.mat");
+            Assert.That(cyanMaterial, Is.Not.Null);
+
+            System.Type guardType = System.Type.GetType(
+                "GAIALyricsMovie.Editor.GAIAEmissionKeywordGuard, Assembly-CSharp-Editor");
+            Assert.That(guardType, Is.Not.Null);
+
+            cyanMaterial.DisableKeyword("_EMISSION");
+            Assert.That(cyanMaterial.IsKeywordEnabled("_EMISSION"), Is.False);
+
+            object guard = System.Activator.CreateInstance(guardType);
+            guardType.GetMethod("OnProcessScene").Invoke(
+                guard, new object[] { SceneManager.GetActiveScene(), null });
+            Assert.That(cyanMaterial.IsKeywordEnabled("_EMISSION"), Is.False,
+                "report が null (通常Playなど非ビルド経路) では書き換えないはず。");
+
+            guardType.GetMethod("RestoreEmission").Invoke(
+                null, new object[] { SceneManager.GetActiveScene() });
+            Assert.That(cyanMaterial.IsKeywordEnabled("_EMISSION"), Is.True,
+                "ビルド直前の強制復元でエミッションキーワードが戻っていません。");
         }
 
         [Test]

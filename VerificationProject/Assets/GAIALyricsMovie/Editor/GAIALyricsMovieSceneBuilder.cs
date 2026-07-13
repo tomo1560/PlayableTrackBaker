@@ -549,6 +549,7 @@ namespace GAIALyricsMovie.Editor
             material.SetFloat("_Metallic", 0.42f);
             material.SetFloat("_Glossiness", 0.86f);
             material.EnableKeyword("_EMISSION");
+            material.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
             material.SetColor("_EmissionColor", emission * emissionStrength);
             string path = GeneratedFolder + "/" + name + ".mat";
             AssetDatabase.CreateAsset(material, path);
