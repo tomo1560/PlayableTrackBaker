@@ -130,6 +130,11 @@ namespace GAIALyricsMovie
         // 参照は初回のみ名前引きでキャッシュし、以降は毎フレームのTransform参照だけで動かす
         // (アロケーションなし)。
 
+        // GAIAはBPM 110。全プローブの周期を拍/小節に同期させ、音楽と絵で忠実度を照合できるようにする。
+        const float BeatsPerMinute = 110f;
+        const float BeatHz = BeatsPerMinute / 60f;              // ≈1.833 Hz(1拍0.545秒)
+        const float BarSeconds = 4f * 60f / BeatsPerMinute;     // 4/4で1小節≈2.182秒
+
         bool probesCached;
         Transform cometProbe;
         Transform driftMonolith;
@@ -184,76 +189,79 @@ namespace GAIALyricsMovie
         }
 
         // Comet Circuit: 30fpsのサンプリングでリサージュ8の字曲線がエイリアシング/過度な平滑化を
-        // 起こしていないかを見る。
+        // 起こしていないかを見る。横1拍・縦0.5拍周期(≈1.83Hz / 3.67Hz)でビートに同期。
         void AnimateCometCircuit(float time)
         {
             if (cometProbe == null)
                 return;
 
-            float tau = time * 1.5f;
+            float beatPhase = time * BeatHz;
             cometProbe.localPosition = new Vector3(
-                0.9f * Mathf.Sin(2f * Mathf.PI * tau),
-                0.45f * Mathf.Sin(4f * Mathf.PI * tau),
+                0.9f * Mathf.Sin(2f * Mathf.PI * beatPhase),
+                0.45f * Mathf.Sin(4f * Mathf.PI * beatPhase),
                 0f);
         }
 
         // Drift Monolith: 0.002のreduction閾値付近の極小振幅ドリフト。参照の等身大分身(100倍振幅)と
-        // 見比べることで、キー削減による動き消失を判別しやすくする。
+        // 見比べることで、キー削減による動き消失を判別しやすくする。ドリフト16小節・ボブ2拍周期。
         void AnimateDriftMonolith(float time)
         {
-            float wave60 = Mathf.Sin(2f * Mathf.PI * time / 60f);
-            float wave08 = Mathf.Sin(2f * Mathf.PI * time * 0.8f);
+            float driftWave = Mathf.Sin(2f * Mathf.PI * time / (16f * BarSeconds));
+            float bobWave = Mathf.Sin(2f * Mathf.PI * time * BeatHz / 2f);
 
             if (driftMonolith != null)
-                driftMonolith.localPosition = new Vector3(-0.3f + 0.004f * wave60, 0.5f + 0.003f * wave08, 0f);
+                driftMonolith.localPosition = new Vector3(-0.3f + 0.004f * driftWave, 0.5f + 0.003f * bobWave, 0f);
 
             if (driftReferenceTwin != null)
-                driftReferenceTwin.localPosition = new Vector3(0.3f + 0.4f * wave60, 0.5f + 0.3f * wave08, 0f);
+                driftReferenceTwin.localPosition = new Vector3(0.3f + 0.4f * driftWave, 0.5f + 0.3f * bobWave, 0f);
         }
 
-        // Gyro Spinner: 540°/秒(30fpsで1フレームあたり18°)の高速回転。四元数ベイクの精度/
-        // エイリアシングを見る。
+        // Gyro Spinner: 1拍で1回転(660°/秒、30fpsで1フレームあたり22°)の高速回転。四元数ベイクの
+        // 精度/エイリアシングを見る。ピッチは1小節で1回転。
         void AnimateGyroSpinner(float time)
         {
             if (gyroSpinner == null)
                 return;
 
-            gyroSpinner.localRotation = Quaternion.Euler(time * 90f, time * 540f, 0f);
+            gyroSpinner.localRotation = Quaternion.Euler(
+                time * (360f / BarSeconds),
+                time * (360f * BeatHz),
+                0f);
         }
 
-        // Teleport Beacons: 4スロットを瞬間移動する(区間内は補間なし)。ベイクが忠実なら移動は
-        // 1フレーム以内でスナップし、スミアが出ればカーブ補間の誤りを示す。
+        // Teleport Beacons: 1小節ごとに4スロットを瞬間移動する(区間内は補間なし)。ベイクが忠実なら
+        // 移動は1フレーム以内でスナップし、スミアが出ればカーブ補間の誤りを示す。
         void AnimateTeleportBeacons(float time)
         {
             if (teleportBeacon == null)
                 return;
 
-            int slot = (int)Mathf.Floor(time / 3.457f) % TeleportSlotLocalPositions.Length;
+            int slot = (int)Mathf.Floor(time / BarSeconds) % TeleportSlotLocalPositions.Length;
             if (slot < 0)
                 slot += TeleportSlotLocalPositions.Length;
             teleportBeacon.localPosition = TeleportSlotLocalPositions[slot];
         }
 
-        // Orbit Pair (nested): 親Armがゆっくり回転し、子Counterが逆回転しつつ上下に振動する。
-        // 深い階層のTransformパス記録を検証する。
+        // Orbit Pair (nested): 親Armが8小節で1回転、子Counterが4小節で逆に1回転しつつ
+        // 1小節周期で上下に振動する。深い階層のTransformパス記録を検証する。
         void AnimateOrbitPair(float time)
         {
             if (orbitArm != null)
-                orbitArm.localRotation = Quaternion.Euler(0f, time * 45f, 0f);
+                orbitArm.localRotation = Quaternion.Euler(0f, time * (360f / (8f * BarSeconds)), 0f);
 
             if (orbitCounter != null)
             {
-                orbitCounter.localRotation = Quaternion.Euler(0f, -time * 90f, 0f);
+                orbitCounter.localRotation = Quaternion.Euler(0f, -time * (360f / (4f * BarSeconds)), 0f);
                 Vector3 position = orbitCounter.localPosition;
-                position.y = 0.3f * Mathf.Sin(2f * Mathf.PI * time * 0.5f);
+                position.y = 0.3f * Mathf.Sin(2f * Mathf.PI * time / BarSeconds);
                 orbitCounter.localPosition = position;
             }
         }
 
-        // Phase Choir: 8本のピラーが位相をずらして波打つ。タイミングのズレは波の乱れとして見える。
+        // Phase Choir: 8本のピラーが位相をずらして2拍周期で波打つ。タイミングのズレは波の乱れとして見える。
         void AnimatePhaseChoir(float time)
         {
-            float phaseBase = 2f * Mathf.PI * (time * 0.9f);
+            float phaseBase = 2f * Mathf.PI * (time * BeatHz / 2f);
             for (int k = 0; k < phaseChoirPillars.Length; k++)
             {
                 Transform pillar = phaseChoirPillars[k];
@@ -271,15 +279,15 @@ namespace GAIALyricsMovie
             }
         }
 
-        // Scale Beat: ビートに合わせた鋭いアタック/ディケイ。非正弦(指数)エンベロープが
-        // キー削減を生き延びるかを見る。
+        // Scale Beat: 毎拍(BPM 110)の鋭いアタック/ディケイ。非正弦(指数)エンベロープが
+        // キー削減を生き延びるかを見る。音のビートと絵のパルスのずれがそのまま忠実度の指標になる。
         void AnimateScaleBeat(float time)
         {
             if (scaleBeatCube == null)
                 return;
 
-            float scaledTime = time * 1.42f;
-            float phase = scaledTime - Mathf.Floor(scaledTime);
+            float beatPhase = time * BeatHz;
+            float phase = beatPhase - Mathf.Floor(beatPhase);
             float s = 1f + 0.6f * Mathf.Exp(-8f * phase);
             scaleBeatCube.localScale = Vector3.one * s;
         }
