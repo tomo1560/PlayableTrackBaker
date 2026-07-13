@@ -876,7 +876,10 @@ PlayerSettings:
   windowsGamepadBackendHint: 0
   cloudProjectId: 
   framebufferDepthMemorylessMode: 0
-  qualitySettingsNames: []
+  qualitySettingsNames:
+  - VRC Low
+  - VRC Medium
+  - VRC High
   projectName: 
   organizationId: 
   cloudEnabled: 0
