@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -35,40 +34,13 @@ namespace GAIALyricsMovie.Editor
         static readonly Color Violet = new Color(0.38f, 0.18f, 1f, 1f);
 
         [MenuItem("Tools/PlayableTrackBaker/Create GAIA Lyrics Movie Sample")]
-        public static void BuildFromMenu()
-        {
-            Build();
-            BakeFromCommandLine();
-        }
+        public static void BuildFromMenu() => Build();
 
         public static void BuildFromCommandLine()
         {
             Build();
-            BakeFromCommandLine();
-            Debug.Log("[GAIA Lyrics Movie] Command-line generation and bake completed.");
+            Debug.Log("[GAIA Lyrics Movie] Command-line generation completed (automatic build bake enabled).");
             EditorApplication.delayCall += () => EditorApplication.Exit(0);
-        }
-
-        public static void BakeFromCommandLine()
-        {
-            Scene scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
-            TimelineBakeMarker marker = UnityEngine.Object.FindObjectOfType<TimelineBakeMarker>(true);
-            if (marker == null)
-                throw new InvalidOperationException("GAIA シーンに TimelineBakeMarker がありません。");
-
-            MethodInfo runBake = typeof(PlayableTrackBaker)
-                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
-                .Single(method => method.Name == "RunBake" && method.GetParameters().Length == 1);
-            int count = (int)runBake.Invoke(null, new object[] { new[] { marker } });
-            if (count != 1)
-                throw new InvalidOperationException($"GAIA Timeline のベイク件数が不正です: {count}");
-
-            TimelineAsset bakedTimeline = (TimelineAsset)marker.director.playableAsset;
-            LabelOwnedBakeClips(bakedTimeline);
-            UnityEngine.Object.DestroyImmediate(marker);
-            EditorSceneManager.SaveScene(scene);
-            AssetDatabase.SaveAssets();
-            Debug.Log("[GAIA Lyrics Movie] 手動プレビューベイクを完了しました。");
         }
 
         public static void Build()
@@ -130,7 +102,7 @@ namespace GAIALyricsMovie.Editor
             Debug.Log(
                 $"[GAIA Lyrics Movie] サンプルシーンを生成しました。歌詞 {cues.Count} 行 / {SongDuration:F3} 秒\n" +
                 $"Scene: {ScenePath}\nTimeline: {TimelinePath}\n" +
-                "Play でローカル自動再生します。再生成コマンドが custom Playable のTransform演出をプレビューベイクします。",
+                "Play では custom Playable を再生し、Build & Publish 時はTransform演出を一時Timelineへ非破壊ベイクします。",
                 directorObject);
         }
 
@@ -153,16 +125,10 @@ namespace GAIALyricsMovie.Editor
 
             foreach (string path in ownedPaths.Where(path =>
                          path.StartsWith("Assets/BakedTimelineClips/", StringComparison.Ordinal)))
-                AssetDatabase.DeleteAsset(path);
-        }
-
-        static void LabelOwnedBakeClips(TimelineAsset timeline)
-        {
-            foreach (AnimationTrack track in timeline.GetOutputTracks().OfType<AnimationTrack>())
-            foreach (TimelineClip clip in track.GetClips())
             {
-                if (clip.asset is AnimationPlayableAsset playable && playable.clip != null)
-                    AssetDatabase.SetLabels(playable.clip, new[] { OwnedBakeLabel });
+                UnityEngine.Object asset = AssetDatabase.LoadMainAssetAtPath(path);
+                if (asset != null && AssetDatabase.GetLabels(asset).Contains(OwnedBakeLabel))
+                    AssetDatabase.DeleteAsset(path);
             }
         }
 

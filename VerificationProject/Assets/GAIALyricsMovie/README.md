@@ -1,7 +1,7 @@
 # GAIA Lyrics Movie Sample
 
 `GAIA_LyricsMovie.unity` は、LRC 同期歌詞と宇宙的なモーショングラフィックスを
-PlayableTrackBaker で AnimationClip 化した VRChat Worlds 向けサンプルです。
+Build & Publish 時に PlayableTrackBaker で非破壊ベイクする VRChat Worlds 向けサンプルです。
 
 ## 開き方
 
@@ -9,20 +9,20 @@ PlayableTrackBaker で AnimationClip 化した VRChat Worlds 向けサンプル�
 2. `Assets/GAIALyricsMovie/Scenes/GAIA_LyricsMovie.unity` を開きます。
 3. Play を押すと、GAIA（3:41.504）がローカルで自動再生されます。
 
-シーンは Build Settings に登録済みです。`GAIA Show Director` の Timeline には、
-元のカスタム PlayableTrack と、生成済みの `[Baked] Lyrics` / `[Baked] Baked Visuals`
-が含まれます。元トラックはミュート済みなので、Play 時には VRChat と同じ
-AnimationTrack 側だけで歌詞と宇宙演出が動きます。
+シーンは Build Settings に登録済みです。`GAIA Show Director` には
+`PlayableDirector` と `TimelineBakeMarker` があり、保存TimelineのCustom PlayableTrackは
+有効な未ベイク状態です。Unity Play時はCustom Playableを直接評価します。
 
-完成シーンは手動ベイク済みで、二重ベイクを避けるため `TimelineBakeMarker` を
-保存前に除去します。再生成時はマーカーを一時作成し、ベイク後に再び除去します。
+Build & Publish / Build & Test 時は、ビルド用一時シーン上でTimelineを複製し、
+`[Baked] Lyrics` / `[Baked] Baked Visuals` を自動生成します。保存シーンと元Timelineは
+変更されず、一時アセットもビルド後に削除されます。
 
 ## 再生成
 
 `Tools > PlayableTrackBaker > Create GAIA Lyrics Movie Sample` を実行すると、
-シーン再生成からプレビューベイクまで一操作で完了します。
+自動ベイク用の未ベイクシーンとTimelineを再生成します。
 
-再生成メニューはこのサンプルが所有する Generated、Scene、GAIA 用 bake clip のみを
+再生成メニューはこのサンプルが所有する Generated、Scene、旧GAIA用 bake clipのみを
 作り直します。音源、LRC、フォントは変更しません。
 
 ## 仕様と注意

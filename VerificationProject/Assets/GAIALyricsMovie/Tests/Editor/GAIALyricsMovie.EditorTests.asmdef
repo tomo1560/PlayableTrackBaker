@@ -3,7 +3,9 @@
   "rootNamespace": "GAIALyricsMovie.Tests",
   "references": [
     "GAIALyricsMovie.Runtime",
-    "Unity.Timeline"
+    "Unity.Timeline",
+    "net.tomo1560.playabletrackbaker.Runtime",
+    "net.tomo1560.playabletrackbaker.Editor"
   ],
   "optionalUnityReferences": [
     "TestAssemblies"
