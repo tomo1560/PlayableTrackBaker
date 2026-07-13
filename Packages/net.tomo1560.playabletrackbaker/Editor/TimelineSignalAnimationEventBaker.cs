@@ -45,9 +45,10 @@ namespace PlayableTrackBaking
             if (routedEvents.Length == 0)
                 return 0;
 
-            // ユーザーが既に置いた AnimationEvent は保持する。PoC の生成物を安全に識別する
-            // 仕組みは、TimelineBakeMarker へ永続的な route 設定を追加する次段で導入する。
+            // event host は本ツールが生成・所有する clip である。以前の Signal route を変更して
+            // 再ベイクした場合にも古い SendCustomEvent を残さないよう置換し、それ以外の event は保持する。
             var mergedEvents = (eventHost.events ?? Array.Empty<AnimationEvent>())
+                .Where(animationEvent => animationEvent.functionName != SendCustomEventMethod)
                 .Concat(routedEvents)
                 .OrderBy(animationEvent => animationEvent.time)
                 .ToArray();

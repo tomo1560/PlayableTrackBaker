@@ -78,6 +78,95 @@ namespace PlayableTrackBaking.Tests
                 "無効な event host を渡した場合、clip を部分的に変更してはならない");
         }
 
+        [TestCase(true)]
+        [TestCase(false)]
+        public void AddConfiguredSignalEvents_MissingOrUnrecordedHostLeavesTimelineUntouched(bool missingHost)
+        {
+            var timeline = CreateTimeline();
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = 4.0;
+            var signal = CreateSignal("OpenDoor");
+            CreateEmitter(timeline.markerTrack, 2.0, signal);
+            var recordedHost = CreateHostClip(timeline, "Recorded Host");
+            var unrecordedHost = new GameObject("Unrecorded Signal Host");
+            _cleanup.Add(unrecordedHost);
+            var markerObject = new GameObject("Signal Marker");
+            _cleanup.Add(markerObject);
+            var marker = markerObject.AddComponent<TimelineBakeMarker>();
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = missingHost ? null : unrecordedHost;
+            marker.signalEventRoutes = new[] { new SignalEventRoute(signal, "OnOpenDoor") };
+
+            var originalDuration = FindTimelineClip(timeline, recordedHost).duration;
+
+            Assert.Throws<System.InvalidOperationException>(() =>
+                PlayableTrackBakeCore.AddConfiguredSignalEvents(
+                    timeline,
+                    new List<(AnimationClip clip, GameObject root)> { (recordedHost, markerObject) },
+                    new[] { marker }));
+
+            Assert.IsEmpty(recordedHost.events,
+                "無効な Signal Event Host 設定では AnimationEvent を追加してはならない");
+            Assert.AreEqual(originalDuration, FindTimelineClip(timeline, recordedHost).duration, 0.0001,
+                "無効な Signal Event Host 設定では TimelineClip の長さを変更してはならない");
+        }
+
+        [Test]
+        public void AddConfiguredSignalEvents_StaticHostTrackCoversEntireTimeline()
+        {
+            var timeline = CreateTimeline();
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = 4.0;
+            var signal = CreateSignal("OpenDoor");
+            CreateEmitter(timeline.markerTrack, 3.5, signal);
+            var eventHost = CreateHostClip(timeline, "Static Event Host");
+            var hostObject = new GameObject("Static Signal Host");
+            _cleanup.Add(hostObject);
+            var markerObject = new GameObject("Signal Marker");
+            _cleanup.Add(markerObject);
+            var marker = markerObject.AddComponent<TimelineBakeMarker>();
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = hostObject;
+            marker.signalEventRoutes = new[] { new SignalEventRoute(signal, "OnOpenDoor") };
+
+            int added = PlayableTrackBakeCore.AddConfiguredSignalEvents(
+                timeline,
+                new List<(AnimationClip clip, GameObject root)> { (eventHost, hostObject) },
+                new[] { marker });
+
+            Assert.AreEqual(1, added);
+            Assert.GreaterOrEqual(FindTimelineClip(timeline, eventHost).duration, timeline.duration,
+                "静的な event host でも、後半の Signal が発火できるようベイク済み Track は Timeline 全長を覆うべき");
+        }
+
+        [Test]
+        public void AddConfiguredSignalEvents_RebakeReplacesPreviouslyGeneratedEvents()
+        {
+            var timeline = CreateTimeline();
+            var signal = CreateSignal("OpenDoor");
+            CreateEmitter(timeline.markerTrack, 1.0, signal);
+            var eventHost = CreateHostClip(timeline, "Event Host");
+            var hostObject = new GameObject("Signal Host");
+            _cleanup.Add(hostObject);
+            var markerObject = new GameObject("Signal Marker");
+            _cleanup.Add(markerObject);
+            var marker = markerObject.AddComponent<TimelineBakeMarker>();
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = hostObject;
+            marker.signalEventRoutes = new[] { new SignalEventRoute(signal, "OnOpenDoor") };
+            var recorded = new List<(AnimationClip clip, GameObject root)> { (eventHost, hostObject) };
+
+            Assert.AreEqual(1, PlayableTrackBakeCore.AddConfiguredSignalEvents(timeline, recorded, new[] { marker }));
+            marker.signalEventRoutes = new[] { new SignalEventRoute(signal, "OnOpenDoorRebaked") };
+
+            Assert.AreEqual(1, PlayableTrackBakeCore.AddConfiguredSignalEvents(timeline, recorded, new[] { marker }));
+
+            var events = eventHost.events;
+            Assert.AreEqual(1, events.Length,
+                "再ベイクで以前に生成した Signal AnimationEvent を重複させてはならない");
+            AssertEvent(events[0], 1.0f, "OnOpenDoorRebaked");
+        }
+
         TimelineAsset CreateTimeline()
         {
             var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
@@ -110,6 +199,13 @@ namespace PlayableTrackBaking.Tests
             timeline.CreateTrack<AnimationTrack>(null, name).CreateClip(clip);
             return clip;
         }
+
+        static TimelineClip FindTimelineClip(TimelineAsset timeline, AnimationClip clip)
+            => timeline.GetOutputTracks()
+                .OfType<AnimationTrack>()
+                .SelectMany(track => track.GetClips())
+                .Single(timelineClip => timelineClip.asset is AnimationPlayableAsset animationAsset &&
+                    animationAsset.clip == clip);
 
         static void AssertEvent(AnimationEvent animationEvent, float expectedTime, string expectedUdonEventName)
         {
