@@ -212,7 +212,7 @@ namespace GAIALyricsMovie.Editor
         {
             var spawn = new GameObject("Player Spawn");
             spawn.transform.SetParent(parent, false);
-            spawn.transform.position = new Vector3(0f, 1.15f, -12f);
+            spawn.transform.position = new Vector3(0f, 0.05f, -9f);
 
             var cameraObject = new GameObject("Main Camera");
             cameraObject.tag = "MainCamera";
@@ -252,6 +252,12 @@ namespace GAIALyricsMovie.Editor
             platform.transform.position = new Vector3(0f, -0.35f, -5f);
             platform.transform.localScale = new Vector3(14f, 0.3f, 14f);
             platform.GetComponent<Renderer>().sharedMaterial = floor;
+            // Cylinderプリミティブの既定コライダーはCapsuleColliderで、この扁平なスケールだと
+            // 潰れきらずステージ面より高く盛り上がった球状の当たり判定になるため、
+            // 見た目のメッシュに沿うMeshColliderへ差し替える。
+            Mesh platformMesh = platform.GetComponent<MeshFilter>().sharedMesh;
+            UnityEngine.Object.DestroyImmediate(platform.GetComponent<Collider>());
+            platform.AddComponent<MeshCollider>().sharedMesh = platformMesh;
 
             for (int side = -1; side <= 1; side += 2)
             {
