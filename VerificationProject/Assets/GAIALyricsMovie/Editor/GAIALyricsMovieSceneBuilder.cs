@@ -259,6 +259,7 @@ namespace GAIALyricsMovie.Editor
                 rail.transform.position = new Vector3(side * 8.2f, 0.22f, 2f);
                 rail.transform.localScale = new Vector3(0.08f, 0.08f, 18f);
                 rail.GetComponent<Renderer>().sharedMaterial = side < 0 ? cyan : magenta;
+                UnityEngine.Object.DestroyImmediate(rail.GetComponent<Collider>());
             }
 
             GameObject horizon = CreatePrimitive("Horizon Monolith", PrimitiveType.Cube, parent);
