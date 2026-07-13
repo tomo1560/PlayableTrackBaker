@@ -14,6 +14,22 @@ using UnityEngine.Timeline;
 
 namespace PlayableTrackBaking
 {
+    /// <summary>手動ベイクで完了した Timeline 数を通知する、UI 非依存の進捗値。</summary>
+    internal readonly struct BakeProgress
+    {
+        public int CompletedCount { get; }
+        public int TotalCount { get; }
+
+        public BakeProgress(int completedCount, int totalCount)
+        {
+            CompletedCount = completedCount;
+            TotalCount = totalCount;
+        }
+    }
+
+    /// <summary>ユーザーが手動ベイクを中止したことを、既存のロールバック経路へ伝える内部例外。</summary>
+    sealed class BakeCancelledException : System.OperationCanceledException { }
+
     /// <summary>
     /// TimelineBakeMarker の PlayableTrack を評価し、AnimationClip にベイクして
     /// "[Baked]" プレフィックス付きの AnimationTrack として同じ Timeline に追加する共有ロジック。
@@ -47,6 +63,15 @@ namespace PlayableTrackBaking
         /// </summary>
         public static List<(AnimationClip clip, GameObject root)> Record(
             PlayableDirector director, TimelineAsset timeline, TimelineBakeMarker marker)
+            => Record(director, timeline, marker, null);
+
+        /// <summary>
+        /// onSampleProgress は 0〜1 の進捗を受け取り、false を返すと記録を中止する。
+        /// 中止時も既存の catch により Timeline の状態は復元される。
+        /// </summary>
+        internal static List<(AnimationClip clip, GameObject root)> Record(
+            PlayableDirector director, TimelineAsset timeline, TimelineBakeMarker marker,
+            System.Func<float, bool> onSampleProgress)
         {
             ValidateWorkload(timeline, new[] { marker });
             // Inspector には Range 属性があるが、古いシーンに保存済みの有限な異常値対策として同じ範囲へクランプする
@@ -65,8 +90,8 @@ namespace PlayableTrackBaking
             try
             {
                 return marker.highPrecision
-                    ? RecordHighPrecision(director, marker, fps, duration, frames)
-                    : RecordWithRecorder(director, marker, fps, duration, frames);
+                    ? RecordHighPrecision(director, marker, fps, duration, frames, onSampleProgress)
+                    : RecordWithRecorder(director, marker, fps, duration, frames, onSampleProgress);
             }
             catch
             {
@@ -126,7 +151,8 @@ namespace PlayableTrackBaking
         /// 軽量モード：GameObjectRecorder でスナップショットし、既定のキーフレーム削減つきで保存する。
         /// </summary>
         static List<(AnimationClip, GameObject)> RecordWithRecorder(
-            PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames)
+            PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames,
+            System.Func<float, bool> onSampleProgress)
         {
             // レコーダー準備（記録ルートごとに 1 つ）。未設定（null）のスロットは記録しない
             var recorders = new GameObjectRecorder[marker.recordRoots.Length];
@@ -150,6 +176,7 @@ namespace PlayableTrackBaking
             double previousTime = 0.0;
             for (int f = 0; f <= frames; f++)
             {
+                ThrowIfCancelled(onSampleProgress, f, frames);
                 double sampleTime = System.Math.Min(f / (double)fps, duration);
                 director.time = sampleTime;
                 director.Evaluate();
@@ -184,7 +211,8 @@ namespace PlayableTrackBaking
         /// GameObjectRecorder で採取して同じクリップにマージする（これらは従来どおり削減あり）。
         /// </summary>
         static List<(AnimationClip, GameObject)> RecordHighPrecision(
-            PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames)
+            PlayableDirector director, TimelineBakeMarker marker, float fps, double duration, int frames,
+            System.Func<float, bool> onSampleProgress)
         {
             var captures = new List<RootCapture>();
             for (int i = 0; i < marker.recordRoots.Length; i++)
@@ -211,6 +239,7 @@ namespace PlayableTrackBaking
             double previousTime = 0.0;
             for (int f = 0; f <= frames; f++)
             {
+                ThrowIfCancelled(onSampleProgress, f, frames);
                 double t = System.Math.Min(f / (double)fps, duration);
                 director.time = t;
                 director.Evaluate();
@@ -235,6 +264,16 @@ namespace PlayableTrackBaking
             foreach (var rc in captures)
                 results.Add((rc.BuildClip(fps, marker.highPrecisionReduction, (float)duration), rc.root));
             return results;
+        }
+
+        static void ThrowIfCancelled(System.Func<float, bool> onSampleProgress, int frame, int totalFrames)
+        {
+            // UI の再描画コストを抑えつつ、開始直後・終端・約16フレームごとには確実にキャンセルを確認する。
+            if (onSampleProgress == null || (frame != 0 && frame != totalFrames && frame % 16 != 0))
+                return;
+            float progress = totalFrames == 0 ? 1f : (float)frame / totalFrames;
+            if (!onSampleProgress(progress))
+                throw new BakeCancelledException();
         }
 
         // GameObjectRecorder は最後のスナップショット値を、直前の内部記録時刻にキー化する。
@@ -609,13 +648,46 @@ namespace PlayableTrackBaking
                 .SelectMany(g => g.GetComponentsInChildren<TimelineBakeMarker>(true))
                 .Distinct();
 
-        static void RunBakeWithDialog(IEnumerable<TimelineBakeMarker> markers, string scopeLabel)
+        internal static void RunBakeWithDialog(IEnumerable<TimelineBakeMarker> markers, string scopeLabel)
         {
-            int count = RunBake(markers);
+            bool cancelled = false;
+            int count;
+            try
+            {
+                count = RunBake(
+                    markers,
+                    progress =>
+                    {
+                        bool keepGoing = ShowBakeProgress(progress.CompletedCount, progress.TotalCount, 0f);
+                        cancelled |= !keepGoing;
+                        return keepGoing;
+                    },
+                    (completed, total, sample) =>
+                    {
+                        bool keepGoing = ShowBakeProgress(completed, total, sample);
+                        cancelled |= !keepGoing;
+                        return keepGoing;
+                    });
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
             EditorUtility.DisplayDialog("PlayableTrackBaker",
-                count > 0
+                cancelled
+                    ? $"ベイクをキャンセルしました。完了済み {count} 個の Timeline は保持されています。"
+                    : count > 0
                     ? $"{count} 個の Timeline をベイクしました（{scopeLabel}）。"
                     : $"ベイク対象が見つかりませんでした（{scopeLabel}）。", "OK");
+        }
+
+        static bool ShowBakeProgress(int completed, int total, float currentTimelineProgress)
+        {
+            float ratio = total == 0 ? 1f : (completed + Mathf.Clamp01(currentTimelineProgress)) / total;
+            return !EditorUtility.DisplayCancelableProgressBar(
+                "PlayableTrackBaker",
+                $"{completed} / {total} Timeline をベイク中",
+                Mathf.Clamp01(ratio));
         }
 
         /// <summary>
@@ -623,19 +695,50 @@ namespace PlayableTrackBaking
         /// Inspector のボタンなど、確認ダイアログを挟みたくない入口から使う。
         /// </summary>
         internal static int RunBake(IEnumerable<TimelineBakeMarker> markers)
+            => RunBake(markers, null);
+
+        /// <summary>
+        /// 手動ベイクを実行する。進捗コールバックが false を返した場合、完了済みの結果を保ったまま
+        /// 次の Timeline を開始せずに終了する。UI を持たないため EditMode テストからも検証可能。
+        /// </summary>
+        internal static int RunBake(IEnumerable<TimelineBakeMarker> markers, System.Func<BakeProgress, bool> onProgress)
+            => RunBake(markers, onProgress, null);
+
+        static int RunBake(
+            IEnumerable<TimelineBakeMarker> markers,
+            System.Func<BakeProgress, bool> onProgress,
+            System.Func<int, int, float, bool> onSampleProgress)
         {
             int count = 0;
             var groups = markers
                 .Where(marker => marker != null)
                 .Select(marker => (marker, director: ResolveDirector(marker)))
                 .Where(x => x.director != null)
-                .GroupBy(x => x.director);
+                .GroupBy(x => x.director)
+                .ToList();
 
+            int completedTimelines = 0;
             foreach (var group in groups)
             {
                 var groupMarkers = group.Select(x => x.marker).ToList();
-                if (BakeDestructive(group.Key, groupMarkers))
+                bool baked;
+                try
+                {
+                    baked = BakeDestructive(group.Key, groupMarkers,
+                        onSampleProgress == null ? null : sample =>
+                            onSampleProgress(completedTimelines, groups.Count, sample));
+                }
+                catch (BakeCancelledException)
+                {
+                    break;
+                }
+                if (baked)
+                {
                     count += groupMarkers.Count;
+                    completedTimelines++;
+                    if (onProgress != null && !onProgress(new BakeProgress(completedTimelines, groups.Count)))
+                        break;
+                }
             }
             if (count > 0)
                 AssetDatabase.SaveAssets();
@@ -651,7 +754,9 @@ namespace PlayableTrackBaking
         static PlayableDirector ResolveDirector(TimelineBakeMarker marker)
             => marker.director != null ? marker.director : marker.GetComponent<PlayableDirector>();
 
-        static bool BakeDestructive(PlayableDirector director, IReadOnlyList<TimelineBakeMarker> markers)
+        static bool BakeDestructive(
+            PlayableDirector director, IReadOnlyList<TimelineBakeMarker> markers,
+            System.Func<float, bool> onSampleProgress = null)
         {
             if (director == null || !(director.playableAsset is TimelineAsset timeline))
                 return false;
@@ -692,8 +797,15 @@ namespace PlayableTrackBaking
             try
             {
                 var recorded = new List<(AnimationClip clip, GameObject root)>();
-                foreach (var marker in validMarkers)
-                    recorded.AddRange(PlayableTrackBakeCore.Record(director, timeline, marker));
+                for (int markerIndex = 0; markerIndex < validMarkers.Count; markerIndex++)
+                {
+                    int currentMarkerIndex = markerIndex;
+                    System.Func<float, bool> markerProgress = onSampleProgress == null
+                        ? null
+                        : sample => onSampleProgress((currentMarkerIndex + sample) / validMarkers.Count);
+                    recorded.AddRange(PlayableTrackBakeCore.Record(
+                        director, timeline, validMarkers[markerIndex], markerProgress));
+                }
 
                 // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
                 // ルート名衝突を避けるためインデックスをパスに含める。
@@ -718,6 +830,14 @@ namespace PlayableTrackBaking
                 }
 
                 PlayableTrackBakeCore.AddBakedTracks(director, timeline, recorded, mutePlayableTracks, true);
+                if (recorded.Count > 0)
+                {
+                    var reports = recorded.Select(x => AnimationClipPerformanceAnalyzer.Analyze(x.clip));
+                    long keys = reports.Sum(report => (long)report.TotalKeyCount);
+                    long bytes = reports.Sum(report => report.EstimatedSizeBytes);
+                    Debug.Log($"[PlayableTrackBaker] {director.name}: ベイク結果 {recorded.Count} clip、" +
+                        $"推定キー数 {keys:N0}、推定サイズ {bytes:N0} B", director);
+                }
                 BakeDestructiveFailureInjection?.Invoke();
                 succeeded = true;
             }
@@ -779,10 +899,8 @@ namespace PlayableTrackBaking
                 int n = targets.Length;
                 string label = n > 1 ? $"Bake These PlayableTracks ({n})" : "Bake This PlayableTrack";
                 if (GUILayout.Button(label, GUILayout.Height(28)))
-                {
-                    int baked = PlayableTrackBaker.RunBake(targets.OfType<TimelineBakeMarker>());
-                    Debug.Log($"[PlayableTrackBaker] Inspector から {baked} 個の Timeline をベイクしました。");
-                }
+                    PlayableTrackBaker.RunBakeWithDialog(
+                        targets.OfType<TimelineBakeMarker>(), n > 1 ? "Inspector 選択" : "Inspector");
             }
 
             if (Application.isPlaying)
