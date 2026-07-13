@@ -99,6 +99,65 @@ namespace PlayableTrackBaking.Tests
         }
 
         [Test]
+        public void NonDestructiveBake_ConfiguredSignalEventIsAddedToCloneHostClipAndLeavesSourceUnchanged()
+        {
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            AssetDatabase.CreateAsset(timeline, TimelinePath);
+            var playableTrack = timeline.CreateTrack<PlayableTrack>(null, "Custom Playable");
+            playableTrack.CreateClip<SineMoveTestPlayableAsset>().duration = 1.0;
+            timeline.CreateMarkerTrack();
+            var signal = ScriptableObject.CreateInstance<SignalAsset>();
+            signal.name = "OpenDoor";
+            AssetDatabase.AddObjectToAsset(signal, timeline);
+            var emitter = timeline.markerTrack.CreateMarker<SignalEmitter>(0.75);
+            emitter.asset = signal;
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = 1.0;
+            AssetDatabase.SaveAssets();
+
+            _target = new GameObject("SignalEventHost");
+            _directorObject = new GameObject("SignalIntegrationDirector");
+            var director = _directorObject.AddComponent<PlayableDirector>();
+            director.playableAsset = timeline;
+            var marker = _directorObject.AddComponent<TimelineBakeMarker>();
+            marker.director = director;
+            marker.recordRoots = new[] { _target };
+            marker.highPrecision = true;
+            marker.frameRate = 10f;
+            marker.bakeSignalEvents = true;
+            marker.signalEventHost = _target;
+            marker.signalEventRoutes = new[] { new SignalEventRoute(signal, "OnOpenDoor") };
+
+            Assert.IsTrue(PlayableTrackBakeSceneProcessor.BakeNonDestructive(
+                director, new[] { marker }));
+
+            var clone = director.playableAsset as TimelineAsset;
+            Assert.IsNotNull(clone);
+            Assert.AreNotSame(timeline, clone);
+            string clonePath = AssetDatabase.GetAssetPath(clone);
+            _createdAssetPaths.Add(clonePath);
+
+            var hostClip = clone.GetOutputTracks()
+                .OfType<AnimationTrack>()
+                .Where(PlayableTrackBakeCore.IsBakedTrackOwnedByTool)
+                .SelectMany(track => track.GetClips())
+                .Select(timelineClip => (timelineClip.asset as AnimationPlayableAsset)?.clip)
+                .Single(clip => clip != null && clip.name.EndsWith(_target.name));
+            var events = hostClip.events;
+            Assert.AreEqual(1, events.Length);
+            Assert.AreEqual(0.75f, events[0].time, 0.0001f);
+            Assert.AreEqual("SendCustomEvent", events[0].functionName);
+            Assert.AreEqual("OnOpenDoor", events[0].stringParameter);
+
+            Assert.IsFalse(timeline.GetOutputTracks().Any(PlayableTrackBakeCore.IsBakedTrackOwnedByTool),
+                "非破壊ベイクは元 Timeline にベイク済み Track を追加してはならない");
+            Assert.AreSame(signal, timeline.markerTrack.GetMarkers().OfType<SignalEmitter>().Single().asset,
+                "非破壊ベイクは元 Timeline の SignalEmitter を複製版へ差し替えてはならない");
+            Assert.IsFalse(playableTrack.muted,
+                "非破壊ベイクは元 Timeline の PlayableTrack をミュートしてはならない");
+        }
+
+        [Test]
         public void BakeNonDestructive_RejectsInvalidInputsWithoutCreatingAssets()
         {
             Assert.IsFalse(PlayableTrackBakeSceneProcessor.BakeNonDestructive(null,
