@@ -552,7 +552,28 @@ namespace GAIALyricsMovie.Editor
             material.SetColor("_EmissionColor", emission * emissionStrength);
             string path = GeneratedFolder + "/" + name + ".mat";
             AssetDatabase.CreateAsset(material, path);
+            EnsureSerializedKeyword(material, "_EMISSION");
             return material;
+        }
+
+        /// <summary>
+        /// -nographics のバッチ実行では EnableKeyword が m_ValidKeywords に永続化されないことがあり、
+        /// エミッションが失われてワールドが真っ黒になるため、シリアライズ層でも直接保証する。
+        /// </summary>
+        static void EnsureSerializedKeyword(Material material, string keyword)
+        {
+            var serializedMaterial = new SerializedObject(material);
+            SerializedProperty keywords = serializedMaterial.FindProperty("m_ValidKeywords");
+            for (int index = 0; index < keywords.arraySize; index++)
+            {
+                if (keywords.GetArrayElementAtIndex(index).stringValue == keyword)
+                    return;
+            }
+
+            keywords.InsertArrayElementAtIndex(keywords.arraySize);
+            keywords.GetArrayElementAtIndex(keywords.arraySize - 1).stringValue = keyword;
+            serializedMaterial.ApplyModifiedPropertiesWithoutUndo();
+            EditorUtility.SetDirty(material);
         }
 
         static Material CreateParticleMaterial()

@@ -109,6 +109,16 @@ namespace GAIALyricsMovie.Tests
             var audioImporter = AssetImporter.GetAtPath(AudioPath) as AudioImporter;
             Assert.That(audioImporter, Is.Not.Null);
             Assert.That(audioImporter.defaultSampleSettings.loadType, Is.EqualTo(AudioClipLoadType.Streaming));
+
+            foreach (string materialName in new[] { "GAIA_Floor", "GAIA_Cyan", "GAIA_Magenta", "GAIA_Violet" })
+            {
+                var material = AssetDatabase.LoadAssetAtPath<Material>(
+                    $"Assets/GAIALyricsMovie/Generated/{materialName}.mat");
+                Assert.That(material, Is.Not.Null, materialName);
+                Assert.That(material.IsKeywordEnabled("_EMISSION"), Is.True,
+                    $"{materialName} の _EMISSION キーワードが無効です。エミッションが消えてVRChatで真っ黒に見えます。");
+                Assert.That(material.GetColor("_EmissionColor").maxColorComponent, Is.GreaterThan(0f), materialName);
+            }
         }
 
         [Test]
