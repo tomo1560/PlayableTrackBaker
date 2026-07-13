@@ -65,6 +65,14 @@ namespace PlayableTrackBaking
         [Tooltip("SignalAsset と event host の Udon custom event 名の対応。未登録 Signal は安全に無視される。")]
         public SignalEventRoute[] signalEventRoutes;
 
+        [Header("Manual Bake Precision Validation")]
+        [Tooltip("手動ベイク直後に、元 Timeline と baked clip の全区間位置誤差を検証して Console に出力する。ビルド時の自動ベイクでは実行しない。")]
+        public bool validatePrecisionAfterManualBake = false;
+
+        [Min(0f)]
+        [Tooltip("最大ローカル位置誤差がこの値を超えた場合に warning を出す（m）。")]
+        public float precisionPositionWarningMeters = 0.001f;
+
         void Reset()
         {
             director = GetComponent<PlayableDirector>();

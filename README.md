@@ -86,6 +86,8 @@ Packages/net.tomo1560.playabletrackbaker/
 | Frame Rate | ベイクのサンプリングレート（既定値 60） |
 | High Precision | オンにすると精度優先モードでベイクする。キーフレーム削減を行わず、サンプルした全フレームをそのままキー化する（サンプル点で厳密一致・線形補間）。既定はオフ（軽量・削減あり）。詳細は「ベイクの精度と限界」参照 |
 | High Precision Reduction | 精度優先モード時のキー削減量（0〜0.05）。各カーブの値域に対する最大許容誤差の割合。0（既定）で無削減。上げるほど誤差上限を保ったままキーを間引いてクリップを軽くする。軽量モードや Record All Properties の追加分には影響しない |
+| Validate Precision After Manual Bake | オンにすると、手動ベイク後に元 Timeline とメモリ上の baked clip を全区間（半フレーム刻み）で比較し、最大ローカル位置誤差を Console に出力する。ビルド時の自動ベイクでは実行しない |
+| Precision Position Warning Meters | 上記の最大位置誤差がこの値を超えたとき warning にする閾値（既定 0.001 m） |
 | Mute Playable Tracks After Bake | オン（既定）にすると、ベイク後に元の PlayableTrack を自動でミュートする。エディタプレビューでの二重再生を防ぎ、VRChat 上と同じく `[Baked]` トラックだけが再生される状態に揃う。再ベイク時は自動でアンミュートしてから評価するので、記録が空になることはない |
 
 ### 2. ゴースト比較プレビューで確認する（非破壊・推奨）
@@ -110,6 +112,7 @@ Packages/net.tomo1560.playabletrackbaker/
 - AnimationClip は `Assets/BakedTimelineClips/` に `ディレクター名_ルート名_インデックス_baked.anim` として保存されます（Record Roots 内でのインデックスを含むため、同名のオブジェクトを複数指定してもパスが衝突しません）
 - Timeline に `[Baked] ルート名` という AnimationTrack が追加されます
 - Timeline ウィンドウで `[Baked]` トラックだけを有効にして再生し、元の動きと一致するか確認してください
+- `Validate Precision After Manual Bake` を有効にすると、Console に root ごとの最大ローカル位置誤差・発生時刻・比較サンプル数が出ます。warning なら `Frame Rate` を上げるか `High Precision` を有効にして再ベイクしてください。これは Transform の**位置のみ**を検証する補助機能です。
 
 ### 4. アップロードする
 

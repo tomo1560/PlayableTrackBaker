@@ -860,8 +860,11 @@ namespace PlayableTrackBaking
                     System.Func<float, bool> markerProgress = onSampleProgress == null
                         ? null
                         : sample => onSampleProgress((currentMarkerIndex + sample) / validMarkers.Count);
-                    recorded.AddRange(PlayableTrackBakeCore.Record(
-                        director, timeline, validMarkers[markerIndex], markerProgress));
+                    var marker = validMarkers[markerIndex];
+                    var markerRecorded = PlayableTrackBakeCore.Record(
+                        director, timeline, marker, markerProgress);
+                    recorded.AddRange(markerRecorded);
+                    ValidateManualBakePrecision(director, timeline, marker, markerRecorded);
                 }
 
                 // クリップを固定パスに保存し、保存済みアセットへ差し替える（再ベイク時は上書き）。
@@ -935,6 +938,58 @@ namespace PlayableTrackBaking
             TimelineEditor.Refresh(RefreshReason.ContentsAddedOrRemoved);
             Debug.Log($"[PlayableTrackBaker] {director.name}: PlayableTrack をベイクしました（手動・破壊的）。", director);
             return true;
+        }
+
+        static void ValidateManualBakePrecision(
+            PlayableDirector director,
+            TimelineAsset timeline,
+            TimelineBakeMarker marker,
+            IReadOnlyList<(AnimationClip clip, GameObject root)> recorded)
+        {
+            if (!marker.validatePrecisionAfterManualBake)
+                return;
+
+            // 再ベイク時は、まだ削除されていない旧 [Baked] Track を元 Timeline の評価から除外する。
+            // これをしないと旧 clip と PlayableTrack が合成され、今回の clip との比較にならない。
+            var bakedTrackMuteSnapshot = timeline.GetOutputTracks()
+                .Where(PlayableTrackBakeCore.IsBakedTrackOwnedByTool)
+                .Select(track => (track, muted: track.muted))
+                .ToList();
+            try
+            {
+                foreach (var (track, _) in bakedTrackMuteSnapshot)
+                    track.muted = true;
+                if (bakedTrackMuteSnapshot.Count > 0)
+                    director.RebuildGraph();
+
+                foreach (var (clip, root) in recorded)
+                {
+                    try
+                    {
+                        var report = TimelineBakePrecisionValidationRunner.ValidatePosition(
+                            director, timeline, clip, root, marker.frameRate);
+                        string message = $"[PlayableTrackBaker] {marker.name}: {root.name} の位置精度 " +
+                            $"最大 {report.MaxPositionError:F6} m (t={report.MaxPositionErrorTime:F3}s, " +
+                            $"{report.SampleCount} samples)";
+                        if (report.MaxPositionError > marker.precisionPositionWarningMeters)
+                            Debug.LogWarning(message + $"。閾値 {marker.precisionPositionWarningMeters:F6} m を超えています。frameRate を上げるか High Precision を有効にしてください。", marker);
+                        else
+                            Debug.Log(message, marker);
+                    }
+                    catch (System.Exception exception)
+                    {
+                        Debug.LogWarning($"[PlayableTrackBaker] {marker.name}: {root.name} の精度検証をスキップしました。{exception.Message}", marker);
+                    }
+                }
+            }
+            finally
+            {
+                foreach (var (track, muted) in bakedTrackMuteSnapshot)
+                    if (track != null)
+                        track.muted = muted;
+                if (bakedTrackMuteSnapshot.Count > 0)
+                    director.RebuildGraph();
+            }
         }
     }
 
