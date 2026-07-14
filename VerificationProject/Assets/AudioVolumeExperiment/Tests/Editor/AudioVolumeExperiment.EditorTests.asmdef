@@ -1,0 +1,17 @@
+{
+  "name": "AudioVolumeExperiment.EditorTests",
+  "rootNamespace": "AudioVolumeExperiment.Tests",
+  "references": [
+    "Unity.Timeline"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ]
+}

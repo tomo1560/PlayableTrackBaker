@@ -27,6 +27,12 @@ description: このリポジトリでUdonSharpスクリプトを新規作成・�
    `ScriptableObject.CreateInstance<UdonSharpProgramAsset>` + `sourceCsScript` 設定 +
    `AssetDatabase.CreateAsset` → 未コンパイルなら `UdonSharpCompilerV1.CompileSync(new UdonSharpCompileOptions())`
    （`CompileAllCsPrograms` は非同期でバッチモードで不安定）→ コンパイル検証で失敗は例外。
+   **バッチ実行中に新規作成したprogram assetは `ScriptVersion` がUnknownのままになる罠がある**:
+   これを現行版へ引き上げるアップグレードパスはエディタ更新ループでしか走らず、コンパイルが
+   更新するのは `CompiledVersion` だけなので、後続の `CopyProxyToUdon` が
+   `outdated script version` 例外で失敗する。作成直後に
+   `program.ScriptVersion = UdonSharpProgramVersion.CurrentVersion;` を明示すること
+   （参考実装: `AudioVolumeExperimentSceneBuilder.EnsureToggleProgramAsset()`）。
 3. シーン配線パターン（エディタコード）:
    ```csharp
    var proxy = UdonSharpUndo.AddComponent<MyBehaviour>(go);
