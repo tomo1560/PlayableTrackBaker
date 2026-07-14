@@ -36,3 +36,15 @@ Unity側の一次情報では、TimelineのAudioTrackはバインドしたAudioS
 | AudioSource側だけ音量が変わる | Timeline AudioTrackがVRChatの音量制御を素通りしている（仮説確定）。音楽はUdon制御のAudioSourceに移すべき |
 | 両方とも変わらない | 経路以外の原因（クライアント設定・デバイス等）を疑う |
 | 両方とも変わる | Timeline犯人説は誤り。GAIAシーン固有の別要因を調査する |
+
+## 実験結果（2026-07-14）
+
+**両経路ともローカルの音量スライダーで音量変更できた** → Timeline AudioTrack自体は
+VRChatの音量制御に従う。犯人説は棄却。
+
+真因はGAIAワールドのビルド時非破壊ベイク: `PlayableTrackBakeSceneProcessor` が
+Timelineを `CopyAsset` で複製して差し替える際、PlayableDirectorのトラックバインディング
+（トラックオブジェクト参照がキー）を引き継いでおらず、**ビルド版だけAudioTrackが
+未バインド（AudioSourceを介さない直接再生）になっていた**。未バインドのTimeline音声は
+AudioSource層で作用するVRChatの音量制御を素通りする。
+修正: `CopyTrackBindings` でクローンへバインディングを引き継ぐ（PlayableTrackBaker.cs）。

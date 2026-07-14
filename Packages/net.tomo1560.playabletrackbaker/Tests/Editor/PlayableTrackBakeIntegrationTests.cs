@@ -247,13 +247,23 @@ namespace PlayableTrackBaking.Tests
         [Test]
         public void SceneProcessor_EmptySceneDoesNotCreateTemporaryAssets()
         {
-            var scene = SceneManager.GetActiveScene();
+            // 同一実行内の他テスト（別アセンブリ含む）がTimelineBakeMarker入りのシーンを
+            // 開いたままにしてもこのテストの前提が崩れないよう、空シーンを自前で用意する。
+            var scene = UnityEditor.SceneManagement.EditorSceneManager.NewScene(
+                UnityEditor.SceneManagement.NewSceneSetup.EmptyScene,
+                UnityEditor.SceneManagement.NewSceneMode.Single);
             Assert.IsFalse(scene.GetRootGameObjects().Any(root =>
                 root.GetComponentInChildren<TimelineBakeMarker>(true) != null));
 
+            // 実ビルドの残骸（クリーンアップ前の所有ラベル付き一時アセット）が残っていても
+            // このテストの関心は「空シーンで新規作成しないこと」なので、前後差分で検証する。
+            int labeledAssetCountBefore = AssetDatabase.FindAssets(
+                $"l:{PlayableTrackBakeTempCleanup.OwnershipLabel}",
+                new[] { PlayableTrackBakeSceneProcessor.TempFolder }).Length;
+
             new PlayableTrackBakeSceneProcessor().OnProcessScene(scene, null);
 
-            Assert.AreEqual(0, AssetDatabase.FindAssets(
+            Assert.AreEqual(labeledAssetCountBefore, AssetDatabase.FindAssets(
                 $"l:{PlayableTrackBakeTempCleanup.OwnershipLabel}",
                 new[] { PlayableTrackBakeSceneProcessor.TempFolder }).Length);
         }

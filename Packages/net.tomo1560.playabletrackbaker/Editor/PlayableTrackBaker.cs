@@ -1115,6 +1115,7 @@ namespace PlayableTrackBaking
                 .Concat(new[] { PlayableTrackBakeTempCleanup.OwnershipLabel }).Distinct().ToArray());
 
             director.playableAsset = clone;
+            CopyTrackBindings(director, src, clone);
             try
             {
                 var recorded = new List<(AnimationClip clip, GameObject root)>();
@@ -1139,6 +1140,34 @@ namespace PlayableTrackBaking
                 AssetDatabase.DeleteAsset(clonePath);
                 EditorUtility.SetDirty(director);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// PlayableDirector のトラックバインディングはトラックオブジェクト参照がキーのため、
+        /// クローンへ差し替えただけでは元Timelineのバインディング（AudioTrack→AudioSource等）が
+        /// 一切引き継がれない。放置するとビルド版だけAudioTrackが未バインドで再生され、
+        /// AudioSourceを介さない＝VRChat等のAudioSource層の音量制御が効かない音になる。
+        /// CopyAsset による複製はトラックの列挙順が元と一致するので、同一インデックスで引き継ぐ。
+        /// </summary>
+        static void CopyTrackBindings(PlayableDirector director, TimelineAsset src, TimelineAsset clone)
+        {
+            var srcTracks = src.GetOutputTracks().ToList();
+            var cloneTracks = clone.GetOutputTracks().ToList();
+            if (srcTracks.Count != cloneTracks.Count)
+            {
+                Debug.LogWarning(
+                    $"[PlayableTrackBaker] {director.name}: クローンのトラック数が元Timelineと一致しません" +
+                    $"（{srcTracks.Count} → {cloneTracks.Count}）。バインディングの引き継ぎが不完全な可能性があります。",
+                    director);
+            }
+
+            int count = System.Math.Min(srcTracks.Count, cloneTracks.Count);
+            for (int index = 0; index < count; index++)
+            {
+                Object binding = director.GetGenericBinding(srcTracks[index]);
+                if (binding != null)
+                    director.SetGenericBinding(cloneTracks[index], binding);
             }
         }
 

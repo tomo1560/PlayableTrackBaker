@@ -355,6 +355,16 @@ namespace GAIALyricsMovie.Tests
                 Assert.That(buildTimelinePath, Does.StartWith(TempBakeFolder));
                 Assert.That(buildTimeline.GetOutputTracks().OfType<PlayableTrack>().Single().muted, Is.True);
 
+                // Directorのバインディングはトラックオブジェクト参照がキーのため、クローンの
+                // AudioTrackへ明示的に引き継がないとビルド版だけ未バインド再生になり、
+                // AudioSourceを介さない＝VRChatの音量スライダーが効かない音になる（実測済み）。
+                AudioTrack cloneAudioTrack = buildTimeline.GetOutputTracks().OfType<AudioTrack>().Single();
+                AudioTrack sourceAudioTrack = sourceTimeline.GetOutputTracks().OfType<AudioTrack>().Single();
+                Object sourceAudioBinding = director.GetGenericBinding(sourceAudioTrack);
+                Assert.That(sourceAudioBinding, Is.InstanceOf<AudioSource>());
+                Assert.That(director.GetGenericBinding(cloneAudioTrack), Is.SameAs(sourceAudioBinding),
+                    "ベイクで複製したTimelineのAudioTrackにもAudioSourceバインディングを引き継ぐはずです。");
+
                 AnimationTrack[] bakedTracks = buildTimeline.GetOutputTracks().OfType<AnimationTrack>()
                     .Where(track => track.name.StartsWith("[Baked]"))
                     .ToArray();
