@@ -1,6 +1,6 @@
 {
   "name": "net.tomo1560.playabletrackbaker",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "displayName": "PlayableTrackBaker for VRChat",
   "description": "Bakes Timeline PlayableTracks into AnimationClips so custom playables play back in VRChat. Includes a non-destructive upload-time bake (Worlds), a manual bake, and a ghost-compare preview. Works in both Worlds and Avatars projects (requires the VRChat SDK base package / VRC.SDKBase).",
   "unity": "2022.3",

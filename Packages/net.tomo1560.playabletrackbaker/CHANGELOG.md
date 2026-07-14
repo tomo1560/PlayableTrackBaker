@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-14
+
+### Fixed
+
+- ビルド時の非破壊ベイクで複製した Timeline に PlayableDirector のトラック binding が引き継がれず、AudioTrack が未バインドで再生される問題を修正。未バインドの Timeline 音声は AudioSource を介さず再生されるため VRChat の音量スライダー（World / Master）で音量調整できなくなっていた
+
 ## [1.1.0] - 2026-07-13
 
 ### Fixed
