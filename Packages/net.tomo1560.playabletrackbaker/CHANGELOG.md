@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.0] - 2026-07-14
 
+### Added
+
+- Timeline の SignalEmitter を、VRChat Worlds で許可された `UdonBehaviour.SendCustomEvent` 呼び出しの AnimationEvent としてベイクする機能を追加。`SignalReceiver` の UnityEvent は移植せず、`TimelineBakeMarker` で明示した SignalAsset→Udon event 名の route だけを出力する（Worlds 専用。`bakeSignalEvents` / `signalEventHost` / `signalEventRoutes`）
+- ベイク進捗と、AnimationClip の複雑さ・概算サイズを可視化するパフォーマンスレポートを追加（VRChat 固有の未検証な上限値には依存しない比較用の概算）
+- 手動ベイク後に、ベイク済み clip と元 Timeline の位置誤差を全区間で検証するオプションを追加（`validatePrecisionAfterManualBake` / `precisionPositionWarningMeters`）
+
+### Changed
+
+- Signal route 型のため、Runtime アセンブリが `Unity.Timeline` へ依存するようになった
+
 ### Fixed
 
 - ビルド時の非破壊ベイクで複製した Timeline に PlayableDirector のトラック binding が引き継がれず、AudioTrack が未バインドで再生される問題を修正。未バインドの Timeline 音声は AudioSource を介さず再生されるため VRChat の音量スライダー（World / Master）で音量調整できなくなっていた
