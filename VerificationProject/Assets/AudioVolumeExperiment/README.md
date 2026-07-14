@@ -21,13 +21,22 @@ Unity側の一次情報では、TimelineのAudioTrackはバインドしたAudioS
 ## 実験手順
 
 1. シーンを開き、VRChat SDKの **Build & Test** で起動する。
-2. 左のシアンのボタン（`Toggle: Timeline AudioTrack`）で **Timeline経由** の再生を開始。
-3. 右のマゼンタのボタン（`Toggle: AudioSource.Play()`）で **素のAudioSource** の再生を開始
-   （同じ曲が二重に鳴るので、片方ずつでもよい）。
-4. VRChatの設定で **World音量 → Master音量** の順にスライダーを動かす。
+2. 左のシアンのボタン（`Toggle: Timeline AudioTrack`）で **AudioSourceにバインドしたTimeline経由** の再生を開始。
+3. 中央のアンバーのボタン（`Toggle: Unbound AudioTrack`）で **未バインドAudioTrack** の再生を開始。
+4. 右のマゼンタのボタン（`Toggle: AudioSource.Play()`）で **素のAudioSource** の再生を開始
+   （同じ曲が重なって鳴るので、片方ずつでもよい）。
+5. VRChatの設定で **World音量 → Master音量** の順にスライダーを動かす。
 
-両経路はクリップ・`volume`(0.6)・`spatialBlend`(0)・VRC Spatial Audio Source
-（空間化無効・Gain 0）まで同一条件に揃えてある。違いは再生経路だけ。
+各経路はクリップ・実効音量(0.6)・2D再生まで同一条件に揃えてある。違いは再生経路だけ。
+
+### 中央ボタン＝バグの意図的な再現
+
+中央の経路はAudioTrackに**AudioSourceを意図的にバインドしていない**。この状態のTimeline音声は
+AudioPlayableOutputからAudioListenerへ直接2D出力されるため、音は鳴るのに
+AudioSource層で作用するVRChatの音量制御（World/Master）を全て素通りする——
+かつてビルド時ベイクのバインディング欠落で起きていた症状の最小再現。
+アドオンなしの標準操作でも、Timelineのバインディング欄をNoneにする／TimelineAssetを
+複製してDirectorに差し替える、のどちらでも同じ状態になる。
 
 ## 判定
 

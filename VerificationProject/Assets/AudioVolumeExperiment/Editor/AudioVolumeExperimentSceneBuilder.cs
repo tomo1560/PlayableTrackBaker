@@ -30,6 +30,7 @@ namespace AudioVolumeExperiment.Editor
         const string GeneratedFolder = Root + "/Generated";
         const string ScenePath = SceneFolder + "/AudioVolumeExperiment.unity";
         const string TimelinePath = GeneratedFolder + "/AudioVolumeExperiment_Timeline.playable";
+        const string UnboundTimelinePath = GeneratedFolder + "/AudioVolumeExperiment_UnboundTimeline.playable";
         const string AudioPath = "Assets/GAIALyricsMovie/Audio/GAIA.ogg";
         const string FontPath = "Assets/GAIALyricsMovie/Fonts/NotoSansJP-VF.ttf";
         const string ToggleScriptPath = Root + "/Udon/AudioPathToggle.cs";
@@ -39,6 +40,7 @@ namespace AudioVolumeExperiment.Editor
 
         static readonly Color Cyan = new Color(0.12f, 0.92f, 1f, 1f);
         static readonly Color Magenta = new Color(1f, 0.12f, 0.62f, 1f);
+        static readonly Color Amber = new Color(1f, 0.72f, 0.1f, 1f);
 
         [MenuItem("Tools/PlayableTrackBaker/Create Audio Volume Experiment Scene")]
         public static void BuildFromMenu() => Build();
@@ -74,14 +76,16 @@ namespace AudioVolumeExperiment.Editor
 
             Material cyanMaterial = CreateButtonMaterial("AVE_Cyan", Cyan);
             Material magentaMaterial = CreateButtonMaterial("AVE_Magenta", Magenta);
+            Material amberMaterial = CreateButtonMaterial("AVE_Amber", Amber);
 
             PlayableDirector director = CreateTimelinePath(worldRoot.transform, audioClip);
+            PlayableDirector unboundDirector = CreateUnboundTimelinePath(worldRoot.transform, audioClip);
             AudioSource directSource = CreateDirectPath(worldRoot.transform, audioClip);
 
             CreateToggleButton(
                 worldRoot.transform,
                 "Timeline Path Button",
-                new Vector3(-1.2f, 0f, 0f),
+                new Vector3(-1.5f, 0f, 0f),
                 cyanMaterial,
                 font,
                 "TIMELINE\nAudioTrack",
@@ -91,8 +95,19 @@ namespace AudioVolumeExperiment.Editor
                 null);
             CreateToggleButton(
                 worldRoot.transform,
+                "Unbound Path Button",
+                new Vector3(0f, 0f, 0f),
+                amberMaterial,
+                font,
+                "UNBOUND\nAudioTrack",
+                Amber,
+                "Toggle: Unbound AudioTrack",
+                unboundDirector,
+                null);
+            CreateToggleButton(
+                worldRoot.transform,
                 "Direct Path Button",
-                new Vector3(1.2f, 0f, 0f),
+                new Vector3(1.5f, 0f, 0f),
                 magentaMaterial,
                 font,
                 "AUDIOSOURCE\nPlay()",
@@ -102,7 +117,7 @@ namespace AudioVolumeExperiment.Editor
                 directSource);
             CreateStaticText(
                 "Experiment Instructions",
-                "VRChat 音量スライダー実験\n左: Timeline AudioTrack 経由  /  右: AudioSource.Play() 経由\n両方を再生して Master / World スライダーを動かし、どちらの音量が変わるか比べる",
+                "VRChat 音量スライダー実験\n左: Timeline AudioTrack（バインドあり）  /  中央: 未バインド AudioTrack（バグ再現）  /  右: AudioSource.Play()\n再生して Master / World スライダーを動かし、どれの音量が変わるか比べる\n中央だけスライダーが効かないはず（AudioSourceを介さない直接再生）",
                 new Vector3(0f, 2.6f, 2.5f),
                 0.03f,
                 Color.white,
@@ -147,6 +162,48 @@ namespace AudioVolumeExperiment.Editor
 
             director.playableAsset = timeline;
             director.SetGenericBinding(audioTrack, audioSource);
+            return director;
+        }
+
+        /// <summary>
+        /// 「音が鳴るのにVRChatの音量スライダーが効かない」状態の意図的な再現。
+        /// AudioTrackにAudioSourceをバインドしないと、AudioPlayableOutputがAudioListenerへ
+        /// 直接2D出力するため音は鳴るが、AudioSource層で作用する音量制御を全て素通りする。
+        /// TimelineAssetを複製してDirectorに差し替えるだけでも同じ状態になる
+        /// （バインディングはトラックオブジェクト参照がキーのため複製で外れる）。
+        /// </summary>
+        static PlayableDirector CreateUnboundTimelinePath(Transform parent, AudioClip audioClip)
+        {
+            var directorObject = new GameObject("Unbound Experiment Director");
+            directorObject.transform.SetParent(parent, false);
+            PlayableDirector director = directorObject.AddComponent<PlayableDirector>();
+            director.playOnAwake = false;
+            director.extrapolationMode = DirectorWrapMode.Loop;
+            director.timeUpdateMode = DirectorUpdateMode.GameTime;
+
+            var timeline = ScriptableObject.CreateInstance<TimelineAsset>();
+            timeline.name = "Audio Volume Experiment Unbound Timeline";
+            timeline.durationMode = TimelineAsset.DurationMode.FixedLength;
+            timeline.fixedDuration = audioClip.length;
+            AssetDatabase.CreateAsset(timeline, UnboundTimelinePath);
+
+            AudioTrack audioTrack = timeline.CreateTrack<AudioTrack>(null, "Music (Unbound AudioTrack)");
+            TimelineClip timelineClip = audioTrack.CreateClip(audioClip);
+            timelineClip.start = 0d;
+            timelineClip.duration = audioClip.length;
+            timelineClip.displayName = "GAIA via unbound AudioTrack";
+
+            // 未バインドだとAudioSource.volume(0.6)を通らないため、聞き比べの音量を
+            // 揃える目的でトラック側のVolume（インスペクタのVolume欄）を同値にする。
+            var serializedTrack = new SerializedObject(audioTrack);
+            SerializedProperty trackVolume = serializedTrack.FindProperty("m_TrackProperties.volume");
+            if (trackVolume == null)
+                throw new InvalidOperationException("AudioTrackのm_TrackProperties.volumeが見つかりません。Timelineパッケージの構成を確認してください。");
+            trackVolume.floatValue = SharedVolume;
+            serializedTrack.ApplyModifiedPropertiesWithoutUndo();
+
+            director.playableAsset = timeline;
+            // 意図的にSetGenericBindingを呼ばない＝未バインドAudioTrack。これが再現の本体。
             return director;
         }
 

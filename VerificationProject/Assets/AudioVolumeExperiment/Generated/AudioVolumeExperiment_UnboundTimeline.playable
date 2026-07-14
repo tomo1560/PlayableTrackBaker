@@ -1,6 +1,6 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
---- !u!114 &-1569553546203155181
+--- !u!114 &-5586359645148172431
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}
@@ -10,7 +10,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 8b22792c3b570444eb18cb78c2af3a74, type: 3}
-  m_Name: Music (AudioTrack)
+  m_Name: Music (Unbound AudioTrack)
   m_EditorClassIdentifier: 
   m_Version: 3
   m_AnimClip: {fileID: 0}
@@ -24,10 +24,10 @@ MonoBehaviour:
   - m_Version: 1
     m_Start: 0
     m_ClipIn: 0
-    m_Asset: {fileID: 112451464054817095}
+    m_Asset: {fileID: 7284128261862994869}
     m_Duration: 221.50399780273438
     m_TimeScale: 1
-    m_ParentTrack: {fileID: -1569553546203155181}
+    m_ParentTrack: {fileID: -5586359645148172431}
     m_EaseInDuration: 0
     m_EaseOutDuration: 0
     m_BlendInDuration: -1
@@ -89,11 +89,11 @@ MonoBehaviour:
     m_PreExtrapolationMode: 0
     m_PostExtrapolationTime: 0
     m_PreExtrapolationTime: 0
-    m_DisplayName: GAIA via AudioTrack
+    m_DisplayName: GAIA via unbound AudioTrack
   m_Markers:
     m_Objects: []
   m_TrackProperties:
-    volume: 1
+    volume: 0.6
     stereoPan: 0
     spatialBlend: 0
 --- !u!114 &11400000
@@ -106,18 +106,18 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: bfda56da833e2384a9677cd3c976a436, type: 3}
-  m_Name: AudioVolumeExperiment_Timeline
+  m_Name: AudioVolumeExperiment_UnboundTimeline
   m_EditorClassIdentifier: 
   m_Version: 0
   m_Tracks:
-  - {fileID: -1569553546203155181}
+  - {fileID: -5586359645148172431}
   m_FixedDuration: 221.50399780273438
   m_EditorSettings:
     m_Framerate: 60
     m_ScenePreview: 1
   m_DurationMode: 1
   m_MarkerTrack: {fileID: 0}
---- !u!114 &112451464054817095
+--- !u!114 &7284128261862994869
 MonoBehaviour:
   m_ObjectHideFlags: 1
   m_CorrespondingSourceObject: {fileID: 0}

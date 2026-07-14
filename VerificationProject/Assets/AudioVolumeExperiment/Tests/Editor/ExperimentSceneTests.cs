@@ -24,20 +24,38 @@ namespace AudioVolumeExperiment.Tests
             var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(AudioPath);
             Assert.That(clip, Is.Not.Null);
 
-            // Timeline経路: AudioTrackがAudioSourceにバインドされ、ループ再生する。
-            PlayableDirector director = Object.FindObjectOfType<PlayableDirector>(true);
-            Assert.That(director, Is.Not.Null);
-            Assert.That(director.playOnAwake, Is.False);
-            Assert.That(director.extrapolationMode, Is.EqualTo(DirectorWrapMode.Loop));
+            // 2つのTimeline経路（バインドあり/なし）が同条件でループ再生する。
+            PlayableDirector[] directors = Object.FindObjectsOfType<PlayableDirector>(true);
+            Assert.That(directors, Has.Length.EqualTo(2));
+            foreach (PlayableDirector anyDirector in directors)
+            {
+                Assert.That(anyDirector.playOnAwake, Is.False, anyDirector.name);
+                Assert.That(anyDirector.extrapolationMode, Is.EqualTo(DirectorWrapMode.Loop), anyDirector.name);
+                var anyTimeline = anyDirector.playableAsset as TimelineAsset;
+                Assert.That(anyTimeline, Is.Not.Null, anyDirector.name);
+                TimelineClip anyClip = anyTimeline.GetOutputTracks().OfType<AudioTrack>().Single()
+                    .GetClips().Single();
+                Assert.That(anyClip.duration, Is.EqualTo((double)clip.length).Within(0.01d), anyDirector.name);
+            }
 
-            var timeline = director.playableAsset as TimelineAsset;
-            Assert.That(timeline, Is.Not.Null);
-            AudioTrack audioTrack = timeline.GetOutputTracks().OfType<AudioTrack>().Single();
-            TimelineClip timelineClip = audioTrack.GetClips().Single();
-            Assert.That(timelineClip.duration, Is.EqualTo((double)clip.length).Within(0.01d));
+            PlayableDirector director = directors.Single(d => d.name == "Experiment Director");
+            PlayableDirector unboundDirector = directors.Single(d => d.name == "Unbound Experiment Director");
+
+            AudioTrack audioTrack = ((TimelineAsset)director.playableAsset)
+                .GetOutputTracks().OfType<AudioTrack>().Single();
             var boundSource = director.GetGenericBinding(audioTrack) as AudioSource;
             Assert.That(boundSource, Is.Not.Null, "AudioTrackはAudioSourceにバインドされているはずです。");
             Assert.That(boundSource.playOnAwake, Is.False);
+
+            // 再現経路: 「音は鳴るのに音量制御が効かない」状態を作るため、意図的に未バインドにする。
+            AudioTrack unboundTrack = ((TimelineAsset)unboundDirector.playableAsset)
+                .GetOutputTracks().OfType<AudioTrack>().Single();
+            Assert.That(unboundDirector.GetGenericBinding(unboundTrack), Is.Null,
+                "再現用経路のAudioTrackは意図的に未バインドのはずです。");
+            var serializedUnboundTrack = new SerializedObject(unboundTrack);
+            Assert.That(serializedUnboundTrack.FindProperty("m_TrackProperties.volume").floatValue,
+                Is.EqualTo(boundSource.volume).Within(0.0001f),
+                "未バインド経路はAudioSource.volumeを通らないため、トラックVolumeで音量を揃えるはずです。");
 
             // 直接経路: 同じクリップを素のAudioSourceでループ再生する。
             AudioSource directSource = Object.FindObjectsOfType<AudioSource>(true)
@@ -61,11 +79,11 @@ namespace AudioVolumeExperiment.Tests
                     $"{source.name} のGainは両経路の条件を揃えるため0のはずです。");
             }
 
-            // トグルボタン: 片方はdirectorのみ、もう片方はaudioSourceのみを持つ。
+            // トグルボタン: 3経路それぞれがちょうど1つのトグルに配線されている。
             MonoBehaviour[] toggles = Object.FindObjectsOfType<MonoBehaviour>(true)
                 .Where(component => component != null && component.GetType().Name == "AudioPathToggle")
                 .ToArray();
-            Assert.That(toggles.Length, Is.EqualTo(2));
+            Assert.That(toggles.Length, Is.EqualTo(3));
             foreach (MonoBehaviour toggle in toggles)
             {
                 Assert.That(toggle.GetComponent<Collider>(), Is.Not.Null,
@@ -76,18 +94,23 @@ namespace AudioVolumeExperiment.Tests
                 Assert.That((directorRef != null) ^ (audioRef != null), Is.True,
                     "各トグルはどちらか片方の経路だけを持つはずです。");
 
+                string expectedInteractText =
+                    directorRef == (Object)director ? "Toggle: Timeline AudioTrack"
+                    : directorRef == (Object)unboundDirector ? "Toggle: Unbound AudioTrack"
+                    : "Toggle: AudioSource.Play()";
                 Component backingUdon = toggle.GetComponents<Component>()
                     .Single(component => component.GetType().FullName == "VRC.Udon.UdonBehaviour");
                 var serializedBacking = new SerializedObject(backingUdon);
                 Assert.That(serializedBacking.FindProperty("programSource").objectReferenceValue, Is.Not.Null);
                 Assert.That(serializedBacking.FindProperty("interactText").stringValue,
-                    directorRef != null
-                        ? Is.EqualTo("Toggle: Timeline AudioTrack")
-                        : Is.EqualTo("Toggle: AudioSource.Play()"));
+                    Is.EqualTo(expectedInteractText));
             }
 
             Assert.That(toggles.Count(toggle =>
                 new SerializedObject(toggle).FindProperty("director").objectReferenceValue == (Object)director),
+                Is.EqualTo(1));
+            Assert.That(toggles.Count(toggle =>
+                new SerializedObject(toggle).FindProperty("director").objectReferenceValue == (Object)unboundDirector),
                 Is.EqualTo(1));
             Assert.That(toggles.Count(toggle =>
                 new SerializedObject(toggle).FindProperty("audioSource").objectReferenceValue == (Object)directSource),
