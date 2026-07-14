@@ -5,13 +5,16 @@ using System.Linq;
 using UdonSharp;
 using UdonSharp.Compiler;
 using UdonSharpEditor;
+using Unity.Collections;
 using UnityEditor;
+using UnityEditor.Media;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using UnityEngine.Timeline;
+using UnityEngine.Video;
 using VRC.SDK3.Components;
 using VRC.Udon;
 
@@ -31,6 +34,8 @@ namespace AudioVolumeExperiment.Editor
         const string ScenePath = SceneFolder + "/AudioVolumeExperiment.unity";
         const string TimelinePath = GeneratedFolder + "/AudioVolumeExperiment_Timeline.playable";
         const string UnboundTimelinePath = GeneratedFolder + "/AudioVolumeExperiment_UnboundTimeline.playable";
+        const string VideoFolder = Root + "/Video";
+        const string VideoPath = VideoFolder + "/DirectAudioProbe.mp4";
         const string AudioPath = "Assets/GAIALyricsMovie/Audio/GAIA.ogg";
         const string FontPath = "Assets/GAIALyricsMovie/Fonts/NotoSansJP-VF.ttf";
         const string ToggleScriptPath = Root + "/Udon/AudioPathToggle.cs";
@@ -41,6 +46,7 @@ namespace AudioVolumeExperiment.Editor
         static readonly Color Cyan = new Color(0.12f, 0.92f, 1f, 1f);
         static readonly Color Magenta = new Color(1f, 0.12f, 0.62f, 1f);
         static readonly Color Amber = new Color(1f, 0.72f, 0.1f, 1f);
+        static readonly Color Violet = new Color(0.55f, 0.35f, 1f, 1f);
 
         [MenuItem("Tools/PlayableTrackBaker/Create Audio Volume Experiment Scene")]
         public static void BuildFromMenu() => Build();
@@ -65,6 +71,7 @@ namespace AudioVolumeExperiment.Editor
 
             AudioClip audioClip = RequireAsset<AudioClip>(AudioPath);
             Font font = RequireAsset<Font>(FontPath);
+            EnsureProbeVideo();
             EnsureToggleProgramAsset();
 
             Scene scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -77,49 +84,70 @@ namespace AudioVolumeExperiment.Editor
             Material cyanMaterial = CreateButtonMaterial("AVE_Cyan", Cyan);
             Material magentaMaterial = CreateButtonMaterial("AVE_Magenta", Magenta);
             Material amberMaterial = CreateButtonMaterial("AVE_Amber", Amber);
+            Material violetMaterial = CreateButtonMaterial("AVE_Violet", Violet);
 
             PlayableDirector director = CreateTimelinePath(worldRoot.transform, audioClip);
             PlayableDirector unboundDirector = CreateUnboundTimelinePath(worldRoot.transform, audioClip);
+            GameObject videoObject = CreateVideoPath(worldRoot.transform, new Vector3(0.75f, 0f, 0f));
             AudioSource directSource = CreateDirectPath(worldRoot.transform, audioClip);
 
             CreateToggleButton(
                 worldRoot.transform,
                 "Timeline Path Button",
-                new Vector3(-1.5f, 0f, 0f),
+                new Vector3(-2.25f, 0f, 0f),
                 cyanMaterial,
                 font,
                 "TIMELINE\nAudioTrack",
                 Cyan,
                 "Toggle: Timeline AudioTrack",
                 director,
+                null,
                 null);
             CreateToggleButton(
                 worldRoot.transform,
                 "Unbound Path Button",
-                new Vector3(0f, 0f, 0f),
+                new Vector3(-0.75f, 0f, 0f),
                 amberMaterial,
                 font,
                 "UNBOUND\nAudioTrack",
                 Amber,
                 "Toggle: Unbound AudioTrack",
                 unboundDirector,
+                null,
                 null);
             CreateToggleButton(
                 worldRoot.transform,
+                "Video Path Button",
+                new Vector3(0.75f, 0f, 0f),
+                violetMaterial,
+                font,
+                "VIDEO\nDirect Audio",
+                Violet,
+                "Toggle: VideoPlayer Direct Audio",
+                null,
+                null,
+                videoObject);
+            CreateToggleButton(
+                worldRoot.transform,
                 "Direct Path Button",
-                new Vector3(1.5f, 0f, 0f),
+                new Vector3(2.25f, 0f, 0f),
                 magentaMaterial,
                 font,
                 "AUDIOSOURCE\nPlay()",
                 Magenta,
                 "Toggle: AudioSource.Play()",
                 null,
-                directSource);
+                directSource,
+                null);
             CreateStaticText(
                 "Experiment Instructions",
-                "VRChat 音量スライダー実験\n左: Timeline AudioTrack（バインドあり）  /  中央: 未バインド AudioTrack（バグ再現）  /  右: AudioSource.Play()\n再生して Master / World スライダーを動かし、どれの音量が変わるか比べる\n中央だけスライダーが効かないはず（AudioSourceを介さない直接再生）",
-                new Vector3(0f, 2.6f, 2.5f),
-                0.03f,
+                "VRChat 音量スライダー実験 — 再生して Master / World スライダーを動かし、どれの音量が変わるか比べる\n" +
+                "1) TIMELINE: バインドありAudioTrack → 効くはず\n" +
+                "2) UNBOUND: 未バインドAudioTrack（バグ再現） → 効かないはず\n" +
+                "3) VIDEO: VideoPlayer Direct音声（ビープ音） → VRChatがロード時に自動修正するため効くはず\n" +
+                "4) AUDIOSOURCE: 素のAudioSource.Play() → 効くはず",
+                new Vector3(0f, 2.9f, 2.5f),
+                0.028f,
                 Color.white,
                 font,
                 worldRoot.transform);
@@ -207,6 +235,125 @@ namespace AudioVolumeExperiment.Editor
             return director;
         }
 
+        /// <summary>
+        /// VideoPlayerのDirect音声出力＝AudioSourceを介さない音の再現経路。
+        /// ただしVRChatのWorldValidation.SecurityScanはVideoPlayerのDirect出力を検出すると
+        /// ロード時にAudioSource出力へ強制変換する（"VideoPlayer using DIRECT audio output fixed."）ため、
+        /// 実機での予想は「スライダーが効く」。未バインドAudioTrack（修正されない）との対比実験。
+        /// VideoPlayerはUdonにAPIが公開されていないため、playOnAwake+ループにして
+        /// GameObjectのSetActiveで再生/停止を切り替える。
+        /// </summary>
+        static GameObject CreateVideoPath(Transform parent, Vector3 basePosition)
+        {
+            var videoClip = RequireAsset<VideoClip>(VideoPath);
+
+            GameObject screen = CreatePrimitive("Direct Video Screen", PrimitiveType.Quad, parent);
+            screen.transform.position = basePosition + new Vector3(0f, 1.95f, 0.4f);
+            screen.transform.localScale = new Vector3(1.28f, 0.72f, 1f);
+            UnityEngine.Object.DestroyImmediate(screen.GetComponent<Collider>());
+            var screenMaterial = new Material(Shader.Find("Unlit/Texture")) { name = "AVE_VideoScreen" };
+            AssetDatabase.CreateAsset(screenMaterial, GeneratedFolder + "/AVE_VideoScreen.mat");
+            screen.GetComponent<Renderer>().sharedMaterial = screenMaterial;
+
+            var videoPlayer = screen.AddComponent<VideoPlayer>();
+            videoPlayer.source = VideoSource.VideoClip;
+            videoPlayer.clip = videoClip;
+            videoPlayer.isLooping = true;
+            videoPlayer.playOnAwake = true;
+            videoPlayer.renderMode = VideoRenderMode.MaterialOverride;
+            videoPlayer.targetMaterialRenderer = screen.GetComponent<Renderer>();
+            videoPlayer.targetMaterialProperty = "_MainTex";
+            // これが再現の本体: Direct出力はAudioSourceを介さない。
+            videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
+            videoPlayer.SetDirectAudioVolume(0, SharedVolume);
+
+            screen.SetActive(false);
+            return screen;
+        }
+
+        /// <summary>
+        /// Direct音声検証用の小さなループ動画（880Hzビープ+移動バー）をMediaEncoderで生成する。
+        /// 音楽経路と耳で聞き分けられるよう、あえて楽曲ではなくビープ音にしている。既存なら再生成しない。
+        /// </summary>
+        static void EnsureProbeVideo()
+        {
+            if (File.Exists(ToAbsoluteAssetPath(VideoPath)))
+                return;
+            EnsureFolder(Root, "Video");
+
+            const int width = 320;
+            const int height = 180;
+            const int fps = 10;
+            const int seconds = 20;
+            const int sampleRate = 48000;
+            const int samplesPerFrame = sampleRate / fps;
+            const int totalFrames = fps * seconds;
+
+            var videoAttributes = new VideoTrackAttributes
+            {
+                frameRate = new MediaRational(fps),
+                width = width,
+                height = height,
+                includeAlpha = false,
+            };
+            var audioAttributes = new AudioTrackAttributes
+            {
+                sampleRate = new MediaRational(sampleRate),
+                channelCount = 1,
+                language = "",
+            };
+
+            var frame = new Texture2D(width, height, TextureFormat.RGBA32, false);
+            var sampleBuffer = new NativeArray<float>(samplesPerFrame, Allocator.Persistent);
+            try
+            {
+                using (var encoder = new MediaEncoder(ToAbsoluteAssetPath(VideoPath), videoAttributes, audioAttributes))
+                {
+                    for (int frameIndex = 0; frameIndex < totalFrames; frameIndex++)
+                    {
+                        FillProbeFrame(frame, frameIndex, totalFrames);
+                        encoder.AddFrame(frame);
+
+                        for (int i = 0; i < samplesPerFrame; i++)
+                        {
+                            double time = (double)(frameIndex * samplesPerFrame + i) / sampleRate;
+                            // 1秒周期の頭0.25秒だけ880Hzのビープを鳴らす。
+                            bool beepOn = time - Math.Floor(time) < 0.25d;
+                            sampleBuffer[i] = beepOn ? 0.5f * Mathf.Sin((float)(2d * Math.PI * 880d * time)) : 0f;
+                        }
+                        encoder.AddSamples(sampleBuffer);
+                    }
+                }
+            }
+            finally
+            {
+                sampleBuffer.Dispose();
+                UnityEngine.Object.DestroyImmediate(frame);
+            }
+
+            AssetDatabase.ImportAsset(VideoPath, ImportAssetOptions.ForceSynchronousImport);
+            if (AssetDatabase.LoadAssetAtPath<VideoClip>(VideoPath) == null)
+                throw new InvalidOperationException($"生成した動画をVideoClipとして読み込めませんでした: {VideoPath}");
+        }
+
+        static void FillProbeFrame(Texture2D frame, int frameIndex, int totalFrames)
+        {
+            int width = frame.width;
+            int height = frame.height;
+            var background = new Color32(38, 20, 96, 255);
+            var bar = new Color32(255, 255, 255, 255);
+            int barCenter = (int)((float)frameIndex / totalFrames * width);
+            var pixels = new Color32[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                    pixels[y * width + x] = Mathf.Abs(x - barCenter) < 8 ? bar : background;
+            }
+
+            frame.SetPixels32(pixels);
+            frame.Apply();
+        }
+
         static AudioSource CreateDirectPath(Transform parent, AudioClip audioClip)
         {
             var audioObject = new GameObject("Direct Audio Source");
@@ -242,7 +389,8 @@ namespace AudioVolumeExperiment.Editor
             Color labelColor,
             string interactText,
             PlayableDirector director,
-            AudioSource audioSource)
+            AudioSource audioSource,
+            GameObject toggleTarget)
         {
             GameObject pedestal = CreatePrimitive(name + " Pedestal", PrimitiveType.Cylinder, parent);
             pedestal.transform.position = basePosition + new Vector3(0f, 0.5f, 0f);
@@ -260,6 +408,7 @@ namespace AudioVolumeExperiment.Editor
             var serializedToggle = new SerializedObject(toggle);
             serializedToggle.FindProperty("director").objectReferenceValue = director;
             serializedToggle.FindProperty("audioSource").objectReferenceValue = audioSource;
+            serializedToggle.FindProperty("toggleTarget").objectReferenceValue = toggleTarget;
             serializedToggle.ApplyModifiedPropertiesWithoutUndo();
             UdonSharpEditorUtility.CopyProxyToUdon(toggle);
 

@@ -57,6 +57,22 @@ namespace AudioVolumeExperiment.Tests
                 Is.EqualTo(boundSource.volume).Within(0.0001f),
                 "未バインド経路はAudioSource.volumeを通らないため、トラックVolumeで音量を揃えるはずです。");
 
+            // VideoPlayer Direct経路: AudioSourceを介さない音のもう1つの再現。
+            // VRChatのWorldValidationがロード時にAudioSource出力へ強制変換するため、
+            // 実機での予想は「スライダーが効く」（未バインドAudioTrackとの対比用）。
+            var videoPlayer = Object.FindObjectsOfType<UnityEngine.Video.VideoPlayer>(true).Single();
+            Assert.That(videoPlayer.gameObject.activeSelf, Is.False,
+                "ビデオ経路はSetActiveトグルで開始するため初期非アクティブのはずです。");
+            Assert.That(videoPlayer.playOnAwake, Is.True,
+                "UdonからVideoPlayer APIを呼べないため、SetActive時のplayOnAwakeで再生するはずです。");
+            Assert.That(videoPlayer.isLooping, Is.True);
+            Assert.That(videoPlayer.clip, Is.Not.Null);
+            Assert.That(videoPlayer.audioOutputMode,
+                Is.EqualTo(UnityEngine.Video.VideoAudioOutputMode.Direct),
+                "Direct音声出力の再現経路のはずです。");
+            Assert.That(videoPlayer.GetDirectAudioVolume(0), Is.EqualTo(0.6f).Within(0.0001f),
+                "他経路と実効音量を揃えるはずです。");
+
             // 直接経路: 同じクリップを素のAudioSourceでループ再生する。
             AudioSource directSource = Object.FindObjectsOfType<AudioSource>(true)
                 .Single(source => source != boundSource);
@@ -79,11 +95,11 @@ namespace AudioVolumeExperiment.Tests
                     $"{source.name} のGainは両経路の条件を揃えるため0のはずです。");
             }
 
-            // トグルボタン: 3経路それぞれがちょうど1つのトグルに配線されている。
+            // トグルボタン: 4経路それぞれがちょうど1つのトグルに配線されている。
             MonoBehaviour[] toggles = Object.FindObjectsOfType<MonoBehaviour>(true)
                 .Where(component => component != null && component.GetType().Name == "AudioPathToggle")
                 .ToArray();
-            Assert.That(toggles.Length, Is.EqualTo(3));
+            Assert.That(toggles.Length, Is.EqualTo(4));
             foreach (MonoBehaviour toggle in toggles)
             {
                 Assert.That(toggle.GetComponent<Collider>(), Is.Not.Null,
@@ -91,12 +107,16 @@ namespace AudioVolumeExperiment.Tests
                 var serializedToggle = new SerializedObject(toggle);
                 Object directorRef = serializedToggle.FindProperty("director").objectReferenceValue;
                 Object audioRef = serializedToggle.FindProperty("audioSource").objectReferenceValue;
-                Assert.That((directorRef != null) ^ (audioRef != null), Is.True,
-                    "各トグルはどちらか片方の経路だけを持つはずです。");
+                Object targetRef = serializedToggle.FindProperty("toggleTarget").objectReferenceValue;
+                int wiredPathCount =
+                    (directorRef != null ? 1 : 0) + (audioRef != null ? 1 : 0) + (targetRef != null ? 1 : 0);
+                Assert.That(wiredPathCount, Is.EqualTo(1),
+                    "各トグルはちょうど1つの経路だけを持つはずです。");
 
                 string expectedInteractText =
                     directorRef == (Object)director ? "Toggle: Timeline AudioTrack"
                     : directorRef == (Object)unboundDirector ? "Toggle: Unbound AudioTrack"
+                    : targetRef != null ? "Toggle: VideoPlayer Direct Audio"
                     : "Toggle: AudioSource.Play()";
                 Component backingUdon = toggle.GetComponents<Component>()
                     .Single(component => component.GetType().FullName == "VRC.Udon.UdonBehaviour");
@@ -114,6 +134,10 @@ namespace AudioVolumeExperiment.Tests
                 Is.EqualTo(1));
             Assert.That(toggles.Count(toggle =>
                 new SerializedObject(toggle).FindProperty("audioSource").objectReferenceValue == (Object)directSource),
+                Is.EqualTo(1));
+            Assert.That(toggles.Count(toggle =>
+                new SerializedObject(toggle).FindProperty("toggleTarget").objectReferenceValue ==
+                    (Object)videoPlayer.gameObject),
                 Is.EqualTo(1));
 
             Assert.That(AssetDatabase.LoadMainAssetAtPath(ToggleProgramPath), Is.Not.Null);

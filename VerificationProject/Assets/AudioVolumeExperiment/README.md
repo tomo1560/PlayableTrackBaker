@@ -21,22 +21,42 @@ Unity側の一次情報では、TimelineのAudioTrackはバインドしたAudioS
 ## 実験手順
 
 1. シーンを開き、VRChat SDKの **Build & Test** で起動する。
-2. 左のシアンのボタン（`Toggle: Timeline AudioTrack`）で **AudioSourceにバインドしたTimeline経由** の再生を開始。
-3. 中央のアンバーのボタン（`Toggle: Unbound AudioTrack`）で **未バインドAudioTrack** の再生を開始。
-4. 右のマゼンタのボタン（`Toggle: AudioSource.Play()`）で **素のAudioSource** の再生を開始
-   （同じ曲が重なって鳴るので、片方ずつでもよい）。
-5. VRChatの設定で **World音量 → Master音量** の順にスライダーを動かす。
+2. 各ボタンで経路を再生する（重ねてもよいが、片方ずつが聞き分けやすい）:
 
-各経路はクリップ・実効音量(0.6)・2D再生まで同一条件に揃えてある。違いは再生経路だけ。
+| ボタン | 経路 | スライダーの予想 |
+| --- | --- | --- |
+| 1. TIMELINE（シアン） | AudioSourceにバインドしたAudioTrack | 効く（実測済み） |
+| 2. UNBOUND（アンバー） | 未バインドAudioTrack＝バグ再現 | **効かないはず** |
+| 3. VIDEO（バイオレット） | VideoPlayerのDirect音声出力（ビープ音+映像） | 効くはず（VRChatが自動修正） |
+| 4. AUDIOSOURCE（マゼンタ） | 素のAudioSource.Play() | 効く（実測済み） |
 
-### 中央ボタン＝バグの意図的な再現
+3. VRChatの設定で **World音量 → Master音量** の順にスライダーを動かす。
 
-中央の経路はAudioTrackに**AudioSourceを意図的にバインドしていない**。この状態のTimeline音声は
+音声経路はクリップ・実効音量(0.6)・2D再生まで同一条件に揃えてある。VIDEOだけは
+音楽と聞き分けるため専用のビープ動画（`Video/DirectAudioProbe.mp4`、MediaEncoderで
+プロシージャル生成）を使う。
+
+### UNBOUND＝バグの意図的な再現
+
+AudioTrackに**AudioSourceを意図的にバインドしていない**。この状態のTimeline音声は
 AudioPlayableOutputからAudioListenerへ直接2D出力されるため、音は鳴るのに
 AudioSource層で作用するVRChatの音量制御（World/Master）を全て素通りする——
 かつてビルド時ベイクのバインディング欠落で起きていた症状の最小再現。
 アドオンなしの標準操作でも、Timelineのバインディング欄をNoneにする／TimelineAssetを
 複製してDirectorに差し替える、のどちらでも同じ状態になる。
+
+### VIDEO＝VRChat側に対策が実在する類似ケース
+
+VideoPlayerの `audioOutputMode = Direct` も同様にAudioSourceを介さない音になるが、
+VRChatの `WorldValidation.SecurityScan`（com.vrchat.base）は**ロード時にDirect出力を検出して
+AudioSource出力へ強制変換する**（ログ: `VideoPlayer using DIRECT audio output fixed.`）。
+そのため実機での予想は「スライダーが効く」。
+
+同じSecurityScanには**未バインドAudioPlayableOutputへの対策も存在する**が、こちらは
+`playableGraph.IsValid()` のときしか走らない＝**ロード時に再生中でないDirector
+（playOnAwake=false、Udonが後からPlay()する構成）は素通りする**。GAIAワールドが
+クライアント側の防御をすり抜けて症状に至ったのはこの穴のせい。UNBOUNDボタンも
+Interact起動なので修正されない（=効かないまま）はず。
 
 ## 判定
 
